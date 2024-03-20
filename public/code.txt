@@ -1,0 +1,552 @@
+using System;
+using System.Collections.Generic;
+using System.ComponentModel;
+using System.Data;
+using System.Diagnostics;
+using System.Linq;
+using System.ServiceProcess;
+using System.Text;
+using System.Threading.Tasks;
+using System.Configuration;
+using System.Net;
+using System.Net.Http;
+using Newtonsoft.Json;
+using Microsoft.Xrm.Sdk;
+using Microsoft.Xrm.Tooling.Connector;
+using Microsoft.Xrm.Sdk.Query;
+using System.Net.Http.Headers;
+using Microsoft.SharePoint.Client;
+using System.Security;
+using System.Timers;
+using System.IO;
+using File = Microsoft.SharePoint.Client.File;
+
+namespace GsarApiWindowsService
+{
+    public partial class GsarApiService : ServiceBase
+    {
+        private HttpClient httpClient;
+        private Timer _timer;
+        private string _bearerToken;
+        DateTime startTime;
+        #region Parameters
+        int schedualeTime = 1;    
+        
+        string url = null;          
+        string grantType = null;    
+        string userName = null;    
+        string password = null;    
+
+        string sharePointUrl = null;
+        string sharePointUserName = null;   
+        string sharePointPassword = null;   
+
+        string dynamics365Url = null;       
+        string dynamics365UserName = null;  
+        string dynamics365Password = null;  
+        #endregion
+        public GsarApiService()
+        {
+            InitializeComponent();
+            _timer = new Timer();
+            _timer.Interval = schedualeTime * 60000; //1 sec = 1000 milliseconds.
+            _timer.AutoReset = true;
+            _timer.Elapsed += _timer_Elapsed;
+            // Initialize HttpClient
+            httpClient = new HttpClient();
+
+        }
+
+        private async void _timer_Elapsed(object sender, ElapsedEventArgs e)
+        {
+            await RunServiceAsync();
+        }
+
+        protected override void OnStart(string[] args)
+        {
+            try
+            {
+                startTime = DateTime.Now;
+                EventLog.WriteEntry(ServiceName, string.Join(", ", args)); 
+                schedualeTime = int.Parse(args[0]);
+                _timer.Interval = schedualeTime * 60000;
+
+                url = args[1];
+                validateParameters(url);
+                httpClient.BaseAddress = new Uri(url);
+
+                grantType = args[2];
+                validateParameters(grantType);
+
+                userName = args[3];
+                validateParameters(userName);
+
+                password = args[4];
+                validateParameters(password);
+
+                sharePointUrl = args[5];
+                validateParameters(sharePointUrl);
+
+                sharePointUserName = args[6];
+                validateParameters(sharePointUserName);
+
+                sharePointPassword = args[7];
+                validateParameters(sharePointPassword);
+
+                dynamics365Url = args[8];
+                validateParameters(dynamics365Url);
+
+                dynamics365UserName = args[9];
+                validateParameters(dynamics365UserName);
+
+                dynamics365Password = args[10];
+                validateParameters(dynamics365Password);
+
+                Debugger.Launch();
+                _timer.Start();
+            }
+            catch (Exception ex)
+            {
+                EventLog.WriteEntry(ServiceName, DateTime.Now.ToString() + " :" + ex.Message, EventLogEntryType.Error);
+                EventLog.WriteEntry(ServiceName, DateTime.Now.ToString() + " :" + ex.StackTrace, EventLogEntryType.Error);
+                Stop();
+            }
+        }
+        private async Task RunServiceAsync()
+        {
+            try
+            {
+                // Load the config values from the app.config file
+                //string schedualeTime = ConfigurationManager.AppSettings["SchedualeTime"];
+                //string url = ConfigurationManager.AppSettings["Url"];
+                //string grantType = ConfigurationManager.AppSettings["GrantType"];
+                //string userName = ConfigurationManager.AppSettings["UserName"];
+                //string password = ConfigurationManager.AppSettings["Password"];
+
+                //string sharePointUrl = ConfigurationManager.AppSettings["SharePointUrl"]; //https://ibsincca.sharepoint.com/sites/IC4W_STORAGE/
+                //string sharePointUserName = ConfigurationManager.AppSettings["SharePointUserName"];
+                //string sharePointPassword = ConfigurationManager.AppSettings["SharePointPassword"];
+
+                //string dynamics365Url = ConfigurationManager.AppSettings["Dynamics365Url"]; //https://ic4w-dev.crm3.dynamics.com
+                //string dynamics365UserName = ConfigurationManager.AppSettings["Dynamics365UserName"]; //hshaban@ibsinc.ca
+                //string dynamics365Password = ConfigurationManager.AppSettings["Dynamics365Password"]; //Ah123.1230123
+
+                // Fetch the bearer token
+                _bearerToken = await FetchBearerToken(grantType, userName, password);
+
+                // Get the organization service
+                IOrganizationService service = await GetOrganizationServiceAsync(dynamics365Url, dynamics365UserName, dynamics365Password);
+
+                // Get the cases with the downloadfile attribute set to true
+                EntityCollection cases = await GetCasesWithDownloadFileAsync(service);
+
+                // Loop through each case and download the zip file
+                foreach (Entity incident in cases.Entities)
+                {
+                    string missionName = incident.GetAttributeValue<string>("title");
+                    
+                    // we need to use missionName, but now it equal test
+                    string clientFolderName = validateFolderName(missionName) + "_" + incident.Id.ToString().ToUpper().Replace("-", "");
+                    
+                    byte[] zipFile = await FetchZipFile(incident.GetAttributeValue<string>("ticketnumber").ToLower(), _bearerToken);
+
+                    if (zipFile != null && zipFile.Length > 0)
+                    {
+                        string fileName = incident.GetAttributeValue<string>("ticketnumber") + "_" + DateTime.Now.ToString("yyyy-MM-dd-hh-mm-tt") + ".zip";
+                        await UploadZipFileToSharePoint(zipFile, clientFolderName, fileName, sharePointUserName, sharePointPassword, sharePointUrl);
+                    }
+                    else
+                    {
+                        EventLog.WriteEntry(ServiceName, DateTime.Now.ToString() + " : Zip file size buffer in null.");
+                    }
+
+                    
+                    string kmlFile = await FetchKmlFile(incident.GetAttributeValue<string>("ticketnumber").ToLower(), _bearerToken);
+
+                    if (kmlFile != null && kmlFile.Length > 0)
+                    {
+                        string kmlFileName = incident.GetAttributeValue<string>("ticketnumber") + "_" + DateTime.Now.ToString("yyyy-MM-dd-hh-mm-tt") + ".kml";
+                        await UploadKmlFileToSharePoint(kmlFile, clientFolderName, kmlFileName, sharePointUserName, sharePointPassword, sharePointUrl);
+                    }
+                    else
+                    {
+                        EventLog.WriteEntry(ServiceName, DateTime.Now.ToString() + " : Kml file size buffer in null.");
+                    }
+
+                    if ((zipFile != null && zipFile.Length > 0) || (kmlFile != null && kmlFile.Length > 0))
+                        await UpdateCaseEntity(service, incident);
+                }
+            }
+            catch (Exception ex)
+            {
+                EventLog.WriteEntry(ServiceName, DateTime.Now.ToString() + " :" + ex.Message, EventLogEntryType.Error);
+                EventLog.WriteEntry(ServiceName, DateTime.Now.ToString() + " :" + ex.StackTrace, EventLogEntryType.Error);
+                Stop();
+            }
+        }
+
+        protected override void OnStop()
+        {
+            // Get the Application event log
+            EventLog appLog = new EventLog("Application");
+            //WindowsGsarApiService
+            EventLogEntryCollection entries = appLog.Entries;
+            // Create a new file to save the event log
+            string fileName = @"C:\WindowsGsarApiServiceLog.txt";
+            using (System.IO.StreamWriter sw = new System.IO.StreamWriter(fileName))
+            {
+                // Write the event log entries to the file
+                foreach (EventLogEntry entry in appLog.Entries)
+                {
+                    if(entry.Source == "WindowsGsarApiService" && entry.TimeWritten >= startTime)
+                        sw.WriteLine(entry.Source+" "+ entry.Message+" "+ entry.EntryType);
+                }
+            }
+
+            _timer.Dispose();
+        }
+
+        public async Task<string> FetchBearerToken(string grantType, string username, string password)
+        {
+            try
+            {
+                // Set the SSL certificate validation callback
+                ServicePointManager.ServerCertificateValidationCallback = delegate { return true; };
+                
+                // End Point
+                string endPoint = $"oauth/token?grant_type={grantType}&username={username}&password={password}";
+
+                // Get request
+                HttpResponseMessage response = await httpClient.GetAsync(endPoint);
+                if (response.IsSuccessStatusCode)
+                {
+                    // Read response content
+                    string responseString = response.Content.ReadAsStringAsync().Result;
+                    var responseJson = JsonConvert.DeserializeObject<dynamic>(responseString);
+                    EventLog.WriteEntry(ServiceName, DateTime.Now.ToString() + ": The connection successful for api" + httpClient.BaseAddress + ", the token has been retrieved", EventLogEntryType.SuccessAudit);
+                    return responseJson.access_token;
+                }
+                else
+                {
+
+                    // Retrieve error message from the response
+                    string responseString = response.Content.ReadAsStringAsync().Result;
+                    var responseJson = JsonConvert.DeserializeObject<dynamic>(responseString);
+                    EventLog.WriteEntry(ServiceName, DateTime.Now.ToString() + " :" + responseJson.error_description.ToString(), EventLogEntryType.FailureAudit);
+                    Stop();
+                    return null;
+                }
+            }
+            catch (Exception ex)
+            {
+                EventLog.WriteEntry(ServiceName, DateTime.Now.ToString() + " :" + ex.Message, EventLogEntryType.Error);
+                EventLog.WriteEntry(ServiceName, DateTime.Now.ToString() + " :" + ex.StackTrace, EventLogEntryType.Error);
+                Stop();
+                return null;
+            }
+        }
+         
+        private async Task<IOrganizationService> GetOrganizationServiceAsync(string url, string username, string password)
+        {
+            // Connect to Dynamics 365 asynchronously
+            try
+            {
+                CrmServiceClient client = new CrmServiceClient($"Url={url};Username={username};Password={password};AuthType=Office365");
+                if ((IOrganizationService)client.OrganizationWebProxyClient != null)
+                {
+                    EventLog.WriteEntry(ServiceName, DateTime.Now.ToString() + " :" + "The connection successful for " + url, EventLogEntryType.SuccessAudit);
+                    return (IOrganizationService)client.OrganizationWebProxyClient;
+                }
+                else
+                {
+                    EventLog.WriteEntry(ServiceName, DateTime.Now.ToString() + " :" + "The connection faild for " + url + "Client is null", EventLogEntryType.FailureAudit);
+                    Stop();
+                    return null;
+                    //return (IOrganizationService)client.OrganizationServiceProxy;
+                }
+            }
+            catch (Exception ex)
+            {
+                EventLog.WriteEntry(ServiceName, DateTime.Now.ToString() + " :" + ex.Message, EventLogEntryType.Error);
+                EventLog.WriteEntry(ServiceName, DateTime.Now.ToString() + " :" + ex.StackTrace, EventLogEntryType.Error);
+                Stop();
+                return null;
+            }
+        }
+
+        private async Task<EntityCollection> GetCasesWithDownloadFileAsync(IOrganizationService service)
+        {
+            try
+            {
+                // Build a query to retrieve case entities where the downloadfile attribute is true
+                QueryExpression query = new QueryExpression("incident");
+                query.ColumnSet = new ColumnSet("incidentid", "cct_downloadzipfile", "title", "ticketnumber");
+                query.Criteria = new FilterExpression();
+                query.Criteria.AddCondition("cct_downloadzipfile", ConditionOperator.Equal, true);
+
+                // Execute the query
+                EntityCollection cases = await Task.Run(() => service.RetrieveMultiple(query));
+                EventLog.WriteEntry(ServiceName, DateTime.Now.ToString() + " :" + "Get Cases With Download File Async successful with cases count " + cases.Entities.Count().ToString(), EventLogEntryType.SuccessAudit);
+                return cases;
+            }
+            catch (Exception ex)
+            {
+                EventLog.WriteEntry(ServiceName, DateTime.Now.ToString() + " :" + ex.Message, EventLogEntryType.Error);
+                EventLog.WriteEntry(ServiceName, DateTime.Now.ToString() + " :" + ex.StackTrace, EventLogEntryType.Error);
+                Stop();
+                return null;
+            }
+        }
+
+        private async Task<byte[]> FetchZipFile(string missionName, string bearerToken)
+        {
+            try
+            {
+                // Add header to HttpClient
+                httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", bearerToken);
+
+                // Set the SSL certificate validation callback
+                ServicePointManager.ServerCertificateValidationCallback = delegate { return true; };
+                // End Point
+                string endPoint = $"Marti/api/missions/{missionName}/archive";
+
+                // Get request
+                HttpResponseMessage response = await httpClient.GetAsync(endPoint);
+                if (response.IsSuccessStatusCode)
+                {
+                    byte[] buffer = await response.Content.ReadAsByteArrayAsync();
+
+                    EventLog.WriteEntry(ServiceName, DateTime.Now.ToString() + " :" + "Fetch zip file successful with buffer size " + buffer.Count().ToString(), EventLogEntryType.SuccessAudit);
+                    // Return zip file
+                    return buffer;
+                }
+                else
+                {
+                    return null;
+                }
+            }
+            catch (Exception ex)
+            {
+                EventLog.WriteEntry(ServiceName, DateTime.Now.ToString() + " :" + ex.Message, EventLogEntryType.Error);
+                EventLog.WriteEntry(ServiceName, DateTime.Now.ToString() + " :" + ex.StackTrace, EventLogEntryType.Error);
+                return null;
+            }
+
+        }
+
+        private async Task UploadZipFileToSharePoint(byte[] zipFile, string clientFolderName, string fileName, string username, string password, string sharePointUrl)
+        {
+            try
+            {
+                #region ConnectToSharePoint
+
+                var securePassword = new SecureString();
+                foreach (char c in password)
+                { securePassword.AppendChar(c); }
+                var onlineCredentials = new SharePointOnlineCredentials(username, securePassword);
+                #endregion
+
+                #region Insert the data
+                using (ClientContext clientContext = new ClientContext(sharePointUrl))
+                {
+                    clientContext.Credentials = onlineCredentials;
+                    // get library Case
+                    var library = clientContext.Web.Lists.GetByTitle("Case");
+                    // create folder
+                    var clientFolder = library.RootFolder.Folders.Add(clientFolderName);
+
+
+                    // upload file
+                    var fileCreationInformation = new FileCreationInformation { ContentStream = new System.IO.MemoryStream(zipFile), Url = fileName, Overwrite = true };
+                    Microsoft.SharePoint.Client.File uploadFile = clientFolder.Files.Add(fileCreationInformation);
+
+                    int blockSize = 1024 * 1024;
+                    byte[] chunk = new byte[blockSize];
+                    int index = 0;
+
+                    using (var stream = new System.IO.MemoryStream(zipFile))
+                    {
+                        int bytesRead;
+                        while ((bytesRead = await stream.ReadAsync(chunk, 0, chunk.Length)) > 0)
+                        {
+                            using (var chunkStream = new System.IO.MemoryStream(chunk, 0, bytesRead))
+                            {
+                                var uploadChunk = new ClientResult<long>();
+                                clientContext.ExecuteQuery();
+                                var start = index * blockSize;
+                                var end = Math.Min((index + 1) * blockSize - 1, zipFile.Length - 1);
+
+                                clientContext.Load(uploadFile, f => f.ServerRelativeUrl);
+                                clientContext.ExecuteQuery();
+
+                                File.SaveBinaryDirect(clientContext, uploadFile.ServerRelativeUrl, chunkStream, true);
+                                clientContext.ExecuteQuery();
+                                index++;
+                            }
+                        }
+                    }
+
+
+                    EventLog.WriteEntry(ServiceName, DateTime.Now.ToString() + " :" + "Zip file uploaded to SharePoint successfully ", EventLogEntryType.SuccessAudit);
+
+                }
+
+                #endregion
+            }
+            catch (Exception ex)
+            {
+                EventLog.WriteEntry(ServiceName, DateTime.Now.ToString() + " :" + ex.Message, EventLogEntryType.Error);
+                EventLog.WriteEntry(ServiceName, DateTime.Now.ToString() + " :" + ex.StackTrace, EventLogEntryType.Error);
+            }
+        }
+
+        private async Task UpdateCaseEntity(IOrganizationService service, Entity caseEntity)
+        {
+            try
+            {
+                caseEntity["cct_downloadzipfile"] = false;
+                await Task.Run(() => service.Update(caseEntity));
+                EventLog.WriteEntry(ServiceName, DateTime.Now.ToString() + " :" + "Case entity updated successfully ", EventLogEntryType.SuccessAudit);
+            }
+            catch (Exception ex)
+            {
+                EventLog.WriteEntry(ServiceName, DateTime.Now.ToString() + " :" + ex.Message, EventLogEntryType.Error);
+                EventLog.WriteEntry(ServiceName, DateTime.Now.ToString() + " :" + ex.StackTrace, EventLogEntryType.Error);
+            }
+        }
+
+        private async Task<string> FetchKmlFile(string missionName, string bearerToken)
+        {
+            try
+            {
+                // Add header to HttpClient
+                httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", bearerToken);
+
+                // Set the SSL certificate validation callback
+                ServicePointManager.ServerCertificateValidationCallback = delegate { return true; };
+                // End Point
+                string endPoint = $"Marti/api/missions/{missionName}/kml";
+                // Get request
+                HttpResponseMessage response = await httpClient.GetAsync(endPoint);
+                if (response.IsSuccessStatusCode)
+                {
+                    string content = await response.Content.ReadAsStringAsync();
+
+                    EventLog.WriteEntry(ServiceName, DateTime.Now.ToString() + " :" + "Fetch kml file successful with buffer size " + Encoding.UTF8.GetByteCount(content).ToString(), EventLogEntryType.SuccessAudit);
+                    // Return kml file
+                    return content;
+                }
+                else
+                {
+                    return null;
+                }
+            }
+            catch (Exception ex)
+            {
+                EventLog.WriteEntry(ServiceName, DateTime.Now.ToString() + " :" + ex.Message, EventLogEntryType.Error);
+                EventLog.WriteEntry(ServiceName, DateTime.Now.ToString() + " :" + ex.StackTrace, EventLogEntryType.Error);
+                return null;
+            }
+
+        }
+
+        private async Task UploadKmlFileToSharePoint(string content, string clientFolderName, string fileName, string username, string password, string sharePointUrl)
+        {
+            try
+            {
+                #region ConnectToSharePoint
+
+                var securePassword = new SecureString();
+                foreach (char c in password)
+                { securePassword.AppendChar(c); }
+                var onlineCredentials = new SharePointOnlineCredentials(username, securePassword);
+                #endregion
+
+                #region Insert the data
+                using (ClientContext clientContext = new ClientContext(sharePointUrl))
+                {
+                    clientContext.Credentials = onlineCredentials;
+                    // get library Case
+                    var library = clientContext.Web.Lists.GetByTitle("Case");
+                    // create folder
+                    var clientFolder = library.RootFolder.Folders.Add(clientFolderName);
+
+                    // convert string to byte array
+                    byte[] byteArray = Encoding.UTF8.GetBytes(content);
+
+                    // upload file
+                    var fileCreationInformation = new FileCreationInformation { ContentStream = new System.IO.MemoryStream(byteArray), Url = fileName, Overwrite = true };
+                    Microsoft.SharePoint.Client.File uploadFile = clientFolder.Files.Add(fileCreationInformation);
+
+                    int blockSize = 1024 * 1024;
+                    byte[] chunk = new byte[blockSize];
+                    int index = 0;
+
+                    using (var stream = new System.IO.MemoryStream(byteArray))
+                    {
+                        int bytesRead;
+                        while ((bytesRead = await stream.ReadAsync(chunk, 0, chunk.Length)) > 0)
+                        {
+                            using (var chunkStream = new System.IO.MemoryStream(chunk, 0, bytesRead))
+                            {
+                                var uploadChunk = new ClientResult<long>();
+                                clientContext.ExecuteQuery();
+                                var start = index * blockSize;
+                                var end = Math.Min((index + 1) * blockSize - 1, byteArray.Length - 1);
+
+                                clientContext.Load(uploadFile, f => f.ServerRelativeUrl);
+                                clientContext.ExecuteQuery();
+
+                                File.SaveBinaryDirect(clientContext, uploadFile.ServerRelativeUrl, chunkStream, true);
+                                clientContext.ExecuteQuery();
+                                index++;
+                            }
+                        }
+                    }
+
+
+                    EventLog.WriteEntry(ServiceName, DateTime.Now.ToString() + " :" + "Kml file uploaded to SharePoint successfully ", EventLogEntryType.SuccessAudit);
+                }
+
+                #endregion
+            }
+            catch (Exception ex)
+            {
+                EventLog.WriteEntry(ServiceName, DateTime.Now.ToString() + " :" + ex.Message, EventLogEntryType.Error);
+                EventLog.WriteEntry(ServiceName, DateTime.Now.ToString() + " :" + ex.StackTrace, EventLogEntryType.Error);
+            }
+        }
+
+        private void validateParameters(string param)
+        {
+            if (string.IsNullOrEmpty(param))
+            {
+                EventLog.WriteEntry(ServiceName, "Parameter " + nameof(param) + " is missing or empty. Stopping service...", EventLogEntryType.Error);
+                Stop();
+                return;
+            }
+        }
+
+        private string validateFolderName(string folderMissionName)
+        {
+            string folderName = folderMissionName;
+            string[] reservedNames = { ".lock", "CON", "PRN", "AUX", "NUL", "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8", "COM9", "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9" };
+
+            foreach (char c in Path.GetInvalidFileNameChars().Union(Path.GetInvalidPathChars()))
+            {
+                folderName = folderName.Replace(c, '_');
+            }
+
+            foreach (string reservedName in reservedNames)
+            {
+                if (folderName.ToUpperInvariant() == reservedName)
+                {
+                    folderName += "_1";
+                    break;
+                }
+            }
+
+            return folderName;
+        }
+    }
+}
