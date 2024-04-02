@@ -75,6 +75,9 @@
 <script>
 import useCredentials from '@/Comopsables/credentials';
 import { reactive, ref } from 'vue';
+import Echo from 'laravel-echo';
+import require from 'pusher-js';
+
 export default {
     name: "mission",
     data() {
@@ -85,6 +88,7 @@ export default {
     setup() {
         const { storeCredentials } = useCredentials();
         const loading = ref(false);
+        window.Pusher = require('pusher-js');
 
         const credentialsForm = reactive({
             tak_url: '', tak_login: '', tak_password: '',
@@ -94,16 +98,30 @@ export default {
 
         const executeProcess = async () => {
             loading.value = true;
-            axios.post("/api/dynamics/execute").then(response => {
+            receivingMessages();
+            await axios.post("/api/dynamics/execute").then(response => {
                 console.log(response.data);
 
             }).catch((error) => { console.log(error) }).finally(() => {
                 loading.value = false;
             });
             }
+        const receivingMessages = async () => {
+            await axios.get("/api/receiving").then(response => {
+                console.log(response.data);
+                if(response.data.message === 'completed') {
+                    return;
+                }
+                receivingMessages();
+
+            }).catch((error) => { console.log(error) })
+        }
+            window.Echo.channel('order-shipped-channel')
+            .listen('.OrderShipped', (event) => {
+            alert('Order shipped!');
+        });
 
         return {storeCredentials, executeProcess ,credentialsForm, loading}
-
     }
 }
 </script>

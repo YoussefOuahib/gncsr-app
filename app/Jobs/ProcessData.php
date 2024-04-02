@@ -1,57 +1,45 @@
 <?php
 
-namespace App\Http\Controllers;
+namespace App\Jobs;
 
 use AlexaCRM\WebAPI\ClientFactory;
 use AlexaCRM\WebAPI\OData\OnlineSettings;
-use AlexaCRM\Xrm\ColumnSet;
 use AlexaCRM\Xrm\Entity;
-use AlexaCRM\Xrm\Query\OrderType;
 use AlexaCRM\Xrm\Query\QueryByAttribute;
+use App\Events\SendResponseEvent;
 use App\Models\Credential;
-use App\Services\DynamicsConnectionService;
-use GuzzleHttp\Client;
-use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Hash;
-use Illuminate\Support\Facades\Http;
-use Illuminate\Support\Facades\Log;
-use AlexaCRM\Xrm\Query\FilterExpression;
-use AlexaCRM\Xrm\Query\ConditionExpression;
-use App\Jobs\ProcessData;
 use Carbon\Carbon;
 use Exception;
-use Illuminate\Log\Logger;
+use Illuminate\Bus\Queueable;
+use Illuminate\Contracts\Queue\ShouldQueue;
+use Illuminate\Foundation\Bus\Dispatchable;
+use Illuminate\Queue\InteractsWithQueue;
+use Illuminate\Queue\SerializesModels;
+use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 
-
-class CredentialsController extends Controller
+class ProcessData implements ShouldQueue
 {
+    use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
     /**
-     * Handle the incoming request.
+     * Create a new job instance.
      */
-
-    public function store(Request $request)
+    public function __construct()
     {
-
-        Credential::create([
-            'user_id' => auth()->id(),
-            'tak_url' => $request->tak_url,
-            'tak_login' => $request->tak_login,
-            'tak_password' => $request->tak_password,
-            'sharepoint_url' => $request->sharepoint_url,
-            'sharepoint_client_id' => $request->sharepoint_client_id,
-            'sharepoint_client_secret' => $request->sharepoint_client_secret,
-            'sharepoint_tenant_id' => $request->sharepoint_tenant_id,
-            'dynamics_url' => $request->dynamics_url,
-            'dynamics_client_id' => $request->dynamics_client_id,
-            'dynamics_client_secret' => $request->dynamics_client_secret,
-        ]);
-        return response()->json(200);
+        //
     }
-    public function execute()
+
+    /**
+     * Execute the job.
+     */
+    public function handle(): void
     {
+
+
         // Replace these values with your Dynamics 365 details
         $organizationUri = Credential::first()->dynamics_url;
         $applicationId = Credential::first()->dynamics_client_id;
@@ -59,8 +47,8 @@ class CredentialsController extends Controller
 
         // Connect to Dynamics
         $service = $this->connect($organizationUri, $applicationId, $applicationSecret);
-        $this->sendResponse('Connected');
-        dd("connected");
+        Event::dispatch(SendResponseEvent::class, 'connected');
+        dd('connected');
         Log::info('connection has been set');
         //get bearer token
         $token = $this->getBearerToken();
@@ -77,6 +65,7 @@ class CredentialsController extends Controller
         $cases = $this->getIncidentWithDownloadZipFeature($service);
 
         foreach ($cases as $case) {
+
             if ($token) {
                 $missionFolderName = $case['Attributes']['title'] . '' .  strtoupper(str_replace('-', '', $case['Attributes']['incidentid']));
                 //         //validate folder name
@@ -108,11 +97,11 @@ class CredentialsController extends Controller
             $settings->applicationID = $applicationId;
             $settings->applicationSecret = $applicationSecret;
 
-            return [ClientFactory::createOnlineClient(
+            return ClientFactory::createOnlineClient(
                 $url,
                 $applicationId,
                 $applicationSecret,
-            )];
+            );
         } catch (\Exception $ex) {
             // Handle exceptions
             Log::error($ex->getMessage());
@@ -575,5 +564,4 @@ class CredentialsController extends Controller
         }
     }
     
-
 }

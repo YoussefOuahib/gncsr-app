@@ -3,6 +3,7 @@
 namespace App\Console;
 
 use App\Http\Controllers\CredentialsController;
+use App\Jobs\ProcessData;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Foundation\Console\Kernel as ConsoleKernel;
 
@@ -13,7 +14,11 @@ class Kernel extends ConsoleKernel
      */
     protected function schedule(Schedule $schedule): void
     {
-        $schedule->command('process:data')->everyTenMinutes();
+        $schedule->command('process:data')->everyMinute();
+
+        
+
+
     }
 
     /**

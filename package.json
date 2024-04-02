@@ -19,7 +19,9 @@
     },
     "dependencies": {
         "@mdi/font": "^7.4.47",
+        "laravel-echo": "^1.16.0",
         "lodash": "^4.17.21",
+        "pusher-js": "^8.4.0-rc2",
         "vue-loader": "^17.4.2",
         "vue-router": "^4.2.5",
         "vuetify": "^3.5.1"
