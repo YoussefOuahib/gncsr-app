@@ -19,9 +19,9 @@ Route::middleware('auth:sanctum')->get('/user', function (Request $request) {
     return $request->user();
 });
 
-Route::get('dynamics/connect', [CredentialsController::class , 'connect']);
+// Route::get('dynamics/connect', [CredentialsController::class , 'connect']);
 Route::post('dynamics/execute', [CredentialsController::class, 'execute']);
-Route::get('dynamics/members', [CredentialsController::class, 'getMembers']);
+// Route::get('dynamics/members', [CredentialsController::class, 'getMembers']);
 
 Route::group(['middleware' => 'auth:sanctum'], function () {
     Route::post('store/credentials', [CredentialsController::class, 'store']);

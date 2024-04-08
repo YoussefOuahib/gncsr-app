@@ -3,6 +3,7 @@ import router from './Routes/index.js'
 import '@mdi/font/css/materialdesignicons.css'
 import 'vuetify/styles'
 import './guard'
+import './bootstrap';
 import { createVuetify } from 'vuetify'
 import * as components from 'vuetify/components'
 import useAuth from "./Comopsables/auth.js";

@@ -1,92 +1,24 @@
 <?php
-
-namespace App\Jobs;
+namespace App\Repositories;
 
 use AlexaCRM\WebAPI\ClientFactory;
 use AlexaCRM\WebAPI\OData\OnlineSettings;
 use AlexaCRM\Xrm\Entity;
 use AlexaCRM\Xrm\Query\FetchExpression;
 use AlexaCRM\Xrm\Query\QueryByAttribute;
-use App\Events\SendResponseEvent;
+use App\Models\Booking;
 use App\Models\Credential;
+use App\Repositories\DynamicsRepositoryInterface;
 use Carbon\Carbon;
-use Exception;
-use Illuminate\Bus\Queueable;
-use Illuminate\Contracts\Queue\ShouldQueue;
-use Illuminate\Foundation\Bus\Dispatchable;
-use Illuminate\Queue\InteractsWithQueue;
-use Illuminate\Queue\SerializesModels;
-use Illuminate\Support\Facades\Event;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
-use Illuminate\Support\Str;
 
-class ProcessData implements ShouldQueue
-{
-    use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
-    /**
-     * Create a new job instance.
-     */
-    public function __construct()
-    {
-        //
-    }
+class DynamicsRepository implements DynamicsRepositoryInterface {
 
-    /**
-     * Execute the job.
-     */
-    public function handle()
-    {
-        Log::info('hello execute');
-        // Replace these values with your Dynamics 365 details
-        $organizationUri = Credential::first()->dynamics_url;
-        $applicationId = Credential::first()->dynamics_client_id;
-        $applicationSecret = Credential::first()->dynamics_client_secret;
-
-        // Connect to Dynamics
-        $service = $this->connect($organizationUri, $applicationId, $applicationSecret);
-        event(new SendResponseEvent('connected'));
-        Log::info('connection has been set');
-        //get bearer token
-        $token = $this->getBearerToken();
-        $users = $this->getContactsFromTak($token);
-        //compare contacts from Dynamics with contacts from TAK then create new contacts in Dynamics
-        $this->compareContacts($service, $users);
-
-        $incidents = $this->getAllIncidents($service);
-        foreach ($incidents as $incident) {
-            $this->updateMissingPerson($service, $incident['Attributes']['incidentid']);
-        }
-        //get all cases with download feature
-        $cases = $this->getIncidentWithDownloadZipFeature($service);
-
-        foreach ($cases as $case) {
-            if ($token) {
-                $missionFolderName = $case['Attributes']['title'] . '' .  strtoupper(str_replace('-', '', $case['Attributes']['incidentid']));
-                //         //validate folder name
-                $folderName = $this->validateFolderName($missionFolderName);
-                //         //create a tak mission //
-                $this->createMission($case['Attributes']['ticketnumber'], $case['Attributes']['title'] ,$token);
-
-                //         // fetch zip file
-                $zip = $this->fetchZipFile(Str::lower($case['Attributes']['ticketnumber']),  $token);
-
-                //         // fetch kml file
-                $kml = $this->fetchKmlFile(Str::lower($case['Attributes']['ticketnumber']),  $token);
-                // $accessToken = $this->getAccessToken();
-                // if ($zip) {
-                //     $this->uploadFileToSharePoint($zip, $folderName, 'zip', $accessToken);
-                // }
-                // if ($kml) {
-                //     $this->uploadFileToSharePoint($kml, $folderName, 'kml', $accessToken);
-                // }
-            }
-        }
-    }
-    private function connect($url, $applicationId, $applicationSecret)
-    {
+    public function connect($url, $applicationId, $applicationSecret) {
         try {
             $settings = new OnlineSettings();
             $settings->instanceURI = $url;
@@ -105,84 +37,18 @@ class ProcessData implements ShouldQueue
             return null;
         }
     }
-    private function getContactsFromTak($token)
-    {
-        Log::info('hello from tak contacts');
-        $baseUrl = Credential::first()->tak_url . '/user-management/api/list-users';
-        $response = Http::withoutVerifying()->withHeaders(['Authorization' => 'Bearer ' . $token])->get($baseUrl);
-        if ($response->successful()) {
-            $users = json_decode($response->getBody(), true);
-            return $users;
-        } else {
-            // Handle unsuccessful response
-            return $response->json()['error_description'] ?? 'Unknown Error';
-        }
-    }
-    private function getBearerToken()
-    {
-        Log::info('hello bearer token');
+    public function getContactByEmail($service, $takEmail) {
         try {
-            $baseUrl = Credential::first()->tak_url . '/oauth/token';
-
-            $response = Http::withoutVerifying()->get($baseUrl, [
-                'grant_type' => 'password',
-                'username' => Credential::first()->tak_login,
-                'password' => Credential::first()->tak_password,
-            ]);
-
-            // Check if the response was successful
-            if ($response->successful()) {
-                $responseJson = json_decode($response->getBody(), true);
-                return $responseJson['access_token'];
-            } else {
-                // Handle unsuccessful response
-                $statusCode = $response->status();
-                $errorMessage = $response->json()['error_description'] ?? 'Unknown Error';
-                throw new Exception("Request failed with status $statusCode: $errorMessage");
-            }
-        } catch (Exception $e) {
-            // Handle any exceptions
-            dd($e->getMessage());
-        }
-    }
-
-
-    private function compareContacts($service, $users)
-    {
-        Log::info('hello compare contacts');
-        try {
-            foreach ($users as $user) {
-                $contactEmail = null;
-                $contactEmail = $this->getContactByEmail($service, $user['username'] . '@tak.com');
-                if ($contactEmail != $user['username'] . '@tak.com' && $contactEmail == 'No email') {
-                    $this->createNewContact($service, $user['username']);
-                    $contactid = $this->getContactId($service, $user['username'] . '@tak.com');
-                    $this->createVolunteer($service, $user, $contactid);
-                }
-            }
-            return response()->json(['message' => 'Contacts have been created successfully.'], 200);
-        } catch (\Exception $ex) {
-            // Handle exceptions
-            Log::error($ex->getMessage());
-            Log::error($ex->getTraceAsString());
-            return response()->json(['error' => 'An error occurred.'], 500);
-        }
-    }
-    private function getContactByEmail($service, $takEmail)
-    {
-        try {
-            Log::info('hello from get contact by email');
-            Log::info($takEmail);
-            $tenMinutesAgo = Carbon::now()->subMinutes(10)->toIso8601String();
+    
             $email = null;
             $fetchXML = <<<FETCHXML
             <fetch mapping="logical"> 
                 <entity name="contact">
                     <attribute name="contactid" />
                     <attribute name="emailaddress1" />
+                    <attribute name="createdon" />
                     <filter type="and">
                         <condition attribute="emailaddress1" operator="eq" value="{$takEmail}" />
-                        <condition attribute="createdon" operator="on-or-after" value="{$tenMinutesAgo}" />
                     </filter>
                 </entity>
             </fetch>
@@ -205,7 +71,8 @@ class ProcessData implements ShouldQueue
             return response()->json(['error' => 'An error occurred.'], 500);
         }
     }
-    private function createNewContact($service, $username)
+
+    public function createNewContact($service, $username)
     {
         try {
             //retrieve contacts from Dynamics
@@ -229,7 +96,8 @@ class ProcessData implements ShouldQueue
             return response()->json(['error' => 'An error occurred.'], 500);
         }
     }
-    private function getContactId($service, $email)
+
+    public function getContactId($service, $email)
     {
         $fetchXML = <<<FETCHXML
             <fetch mapping="logical"> 
@@ -249,22 +117,60 @@ class ProcessData implements ShouldQueue
         $contactid = $entities[0]["Attributes"]["contactid"];
         return $contactid;
     }
-    private function getAccessToken()
+
+    public function createVolunteer($service, $user, $contactId)
     {
-        $clientId = Credential::first()->sharepoint_client_id;
-        $clientSecret = Credential::first()->sharepoint_client_secret;
-        $tenantId = Credential::first()->sharepont_tenant_id;
-        $url = "https://accounts.accesscontrol.windows.net/$tenantId/oauth2/token";
-        $response = Http::asForm()->post($url, [
-            'grant_type' => 'client_credentials',
-            'client_id' => $clientId,
-            'client_secret' => $clientSecret,
-        ]);
-        $responseJson = json_decode($response->getBody(), true);
-        dd($responseJson);
-        return $responseJson['access_token'];
+        try {
+            $volunteer = new Entity('cct_volunteer');
+            $volunteer['emailaddress'] = $user['username'] . '@tak.com';
+            $volunteer['cct_name'] = $user['username'];
+            $volunteer['cct_volunteercontactinfo'] = $contactId;
+            $service->Create($volunteer);
+        } catch (\Exception $ex) {
+            // Handle exceptions
+            Log::error($ex->getMessage());
+            Log::error($ex->getTraceAsString());
+            return response()->json(['error' => 'An error occurred.'], 500);
+        }
     }
-    private function updateMissingPerson($service, $incidentId)
+
+    public function getAllIncidents($service)
+    {
+        try {
+            $fetchXML = <<<FETCHXML
+            <fetch mapping="logical"> 
+                <entity name="incident">
+                    <attribute name="incidentid" />
+                    <attribute name="ticketnumber" />
+                    <attribute name="cct_incidenttype" />
+                    <attribute name="createdon" />
+                </entity>
+            </fetch>
+            FETCHXML;
+            $fetchExpression = new FetchExpression($fetchXML);
+            $collection = $service->RetrieveMultiple($fetchExpression);
+            $records = json_decode(json_encode($collection), true);
+            $entities = $records['Entities'];
+      
+            $filteredData = collect($entities)->filter(function ($item) {
+
+                $isValidType = in_array($item['FormattedValues']['cct_incidenttype'], ['Missing Person', 'Lost Person']);
+                // Convert date to Carbon instance
+                $createdAt = Carbon::parse($item['FormattedValues']['createdon']);
+                // $isValidDate = $createdAt->diffInMinutes(now()) <= 10;
+                // Return true if both conditions are met
+                //return $isValidType && $isValidDate;
+                return $isValidType ;
+            })->values();
+            return $filteredData;
+        }catch (\Exception $ex) {
+            // Handle exceptions
+            Log::error($ex->getMessage());
+            Log::error($ex->getTraceAsString());
+            return response()->json(['error' => 'An error occurred.'], 500);
+        }
+    }
+    public function updateMissingPerson($service, $incidentId)
     {
         try {
             $storagePath = '/public/incidents';
@@ -446,7 +352,7 @@ class ProcessData implements ShouldQueue
             $jsonData = json_encode($newData, JSON_PRETTY_PRINT);
             Storage::put($filePath, $jsonData);
 
-            return $entities;
+            return $filePath;
         } catch (\Exception $ex) {
             // Handle exceptions
             Log::error($ex->getMessage());
@@ -454,48 +360,7 @@ class ProcessData implements ShouldQueue
             return response()->json(['error' => 'An error occurred.'], 500);
         }
     }
-    private function getAllIncidents($service)
-    {
-        try {
-            $fetchXML = <<<FETCHXML
-            <fetch mapping="logical"> 
-                <entity name="incident">
-                    <attribute name="incidentid" />
-                    <attribute name="cct_incidenttype" />
-                    <attribute name="createdon" />
-                </entity>
-            </fetch>
-            FETCHXML;
-            $fetchExpression = new FetchExpression($fetchXML);
-            $collection = $service->RetrieveMultiple($fetchExpression);
-            $records = json_decode(json_encode($collection), true);
-            $entities = $records['Entities'];
-      
-            $filteredData = collect($entities)->filter(function ($item) {
-                Log::info('hello item');
-                Log::info($item);
-                $isValidType = in_array($item['FormattedValues']['cct_incidenttype'], ['Missing Person', 'Lost Person']);
-            
-                // Convert date to Carbon instance
-                $createdAt = Carbon::parse($item['FormattedValues']['createdon']);
-            
-                $isValidDate = $createdAt->diffInMinutes(now()) <= 10;
-            
-                // Return true if both conditions are met
-                return $isValidType && $isValidDate;
-            })->values();
-            Log::info('hello filtered data');
-            Log::info($filteredData);
-            return $filteredData;
-        } catch (\Exception $ex) {
-            // Handle exceptions
-            Log::error($ex->getMessage());
-            Log::error($ex->getTraceAsString());
-            return response()->json(['error' => 'An error occurred.'], 500);
-        }
-    }
-    private function getIncidentWithDownloadZipFeature($service)
-    {
+    public function getIncidentWithDownloadZipFeature($service) {
         try {
             $query = new QueryByAttribute('incident');
             $query->AddAttributeValue('cct_downloadzipfile', true);
@@ -512,84 +377,25 @@ class ProcessData implements ShouldQueue
             return response()->json(['error' => 'An error occurred.'], 500);
         }
     }
-    private function fetchZipFile($case, $token)
+    public function fetchZipFile($caseTicketNumber, $token)
     {
         $takurl = Credential::first()->tak_url;
 
         $response = Http::withoutVerifying()->withHeaders(['Authorization' => 'Bearer ' . $token])
-            ->get($takurl . '/Marti/api/missions/' . $case . '/archive');
+            ->get($takurl . '/Marti/api/missions/' . $caseTicketNumber . '/archive');
 
-        // Log::
+        Log::info('hello fetch zip file');
         return $response->body();
     }
-
-    private function createMission($missionName, $description ,$token)
-    {
-        $baseUrl = Credential::first()->tak_url . '/Marti/api/missions/' . $missionName;
-        $response = Http::withoutVerifying()->withHeaders(['Authorization' => 'Bearer ' . $token])
-            ->put($baseUrl, [
-                'description' => $description,
-                'name' => $missionName,
-            ]);
-            Log::info('mission created');
-            Log::info($response);
-        return $response;
-    }
-    private function createVolunteer($service, $user, $contactid)
-    {
-        try {
-            $volunteer = new Entity('cct_volunteer');
-            $volunteer['emailaddress'] = $user['username'] . '@tak.com';
-            $volunteer['cct_name'] = $user['username'];
-            $volunteer['cct_volunteercontactinfo'] = $contactid;
-            $service->Create($volunteer);
-        } catch (\Exception $ex) {
-            // Handle exceptions
-            Log::error($ex->getMessage());
-            Log::error($ex->getTraceAsString());
-            return response()->json(['error' => 'An error occurred.'], 500);
-        }
-    }
-
-    private function validateFolderName($folderMissionName)
-    {
-        $folderName = preg_replace('/[^A-Za-z0-9_]/', '_', $folderMissionName);
-
-        // Log::
-        return $folderName;
-    }
-    private function fetchKmlFile($missionName, $token)
+    public function fetchKmlFile($caseTicketNumber, $token)
     {
         $takurl = Credential::first()->tak_url;
-        $response = Http::withoutVerifying()
-            ->withHeaders(['Authorization' => 'Bearer ' . $token])
-            ->get($takurl . '/Marti/api/missions/' . $missionName . '/kml');
+
+        $response = Http::withoutVerifying()->withHeaders(['Authorization' => 'Bearer ' . $token])
+            ->get($takurl . '/Marti/api/missions/' . $caseTicketNumber . '/kml');
+
+        Log::info('hello fetch zip file');
         return $response->body();
     }
-    private function uploadFileToSharePoint($file, $folderName, $fileType, $accessToken)
-    {
-        $siteUrl = Credential::first()->sharepoint_url;
-        $username = Credential::first()->sharepoint_login;
-        $password = Credential::first()->sharepoint_password;
-        $fileName = Carbon::now()->format('Y_m_d_H_i_s') . '.' . $fileType;
 
-        try {
-            $response = Http::withHeaders([
-                'Authorization' => "Bearer $accessToken",
-                'Accept' => 'application/json;odata=verbose',
-                'Content-Type' => 'application/json',
-            ])
-                ->post("$siteUrl/_api/web/folders", [
-                    '__metadata' => [
-                        'type' => 'SP.Folder',
-                    ],
-                    'ServerRelativeUrl' => $siteUrl . "/sites/gsarics/$folderName",
-                ]);
-        } catch (\Exception $ex) {
-            // Handle exceptions
-            Log::error($ex->getMessage());
-            Log::error($ex->getTraceAsString());
-            return response()->json(['error' => 'An error occurred.'], 500);
-        }
-    }
 }

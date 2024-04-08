@@ -9,8 +9,9 @@ use Illuminate\Broadcasting\PrivateChannel;
 use Illuminate\Contracts\Broadcasting\ShouldBroadcast;
 use Illuminate\Foundation\Events\Dispatchable;
 use Illuminate\Queue\SerializesModels;
+use Illuminate\Support\Facades\Log;
 
-class SendResponseEvent
+class SendResponseEvent implements ShouldBroadcast
 {
     use Dispatchable, InteractsWithSockets, SerializesModels;
 
@@ -18,10 +19,11 @@ class SendResponseEvent
      * Create a new event instance.
      */
     public $message;
-    public function __construct(String $message)
+    public function __construct($message)
     {
         $this->message = $message;
-
+        Log::info('hello from event');
+        Log::info("message: $message");
     }
 
     /**
@@ -29,10 +31,12 @@ class SendResponseEvent
      *
      * @return array<int, \Illuminate\Broadcasting\Channel>
      */
-    public function broadcastOn(): array
+    public function broadcastOn()
     {
-        return [
-            new PrivateChannel('send-response'),
-        ];
+        return new Channel('response-channel');
+    }
+    public function broadcastAs(): string
+    {
+        return 'response.received';
     }
 }

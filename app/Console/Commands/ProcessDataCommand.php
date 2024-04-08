@@ -28,6 +28,7 @@ class ProcessDataCommand extends Command
      */
     public function handle()
     {
+        Log::info('command executed');
         ProcessData::dispatch();
     }
 }
