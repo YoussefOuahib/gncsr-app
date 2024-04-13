@@ -24,5 +24,6 @@ Route::post('dynamics/execute', [CredentialsController::class, 'execute']);
 // Route::get('dynamics/members', [CredentialsController::class, 'getMembers']);
 
 Route::group(['middleware' => 'auth:sanctum'], function () {
+    Route::get('get/credentials', [CredentialsController::class, 'index']);
     Route::post('store/credentials', [CredentialsController::class, 'store']);
 });

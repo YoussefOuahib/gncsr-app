@@ -99,6 +99,7 @@ import useCredentials from '@/Comopsables/credentials';
 import { reactive, ref, onMounted } from 'vue';
 
 import Echo from 'laravel-echo';
+import axios from 'axios';
 
 
 export default {
@@ -111,6 +112,7 @@ export default {
     setup() {
         const { storeCredentials } = useCredentials();
         const loading = ref(false);
+        const credentials = ref([]);
         const statusMessage = ref('');
         const credentialsForm = reactive({
             tak_url: '', tak_login: '', tak_password: '',
@@ -129,8 +131,27 @@ export default {
                 loading.value = false;
             });
         }
+        const getCredentials = async () => {
+            await axios.get('/api/get/credentials').then(response => {
+                console.log('hello get credentials');
+                credentialsForm.tak_url = response.data.data.tak_url;
+                credentialsForm.tak_login = response.data.data.tak_login;
+                credentialsForm.tak_password = response.data.data.tak_password;
+                credentialsForm.sharepoint_url = response.data.data.sharepoint_url;
+                credentialsForm.sharepoint_client_id = response.data.data.sharepoint_client_id;
+                credentialsForm.sharepoint_client_secret = response.data.data.sharepoint_client_secret;
+                credentialsForm.sharepoint_tenant_id = response.data.data.sharepoint_tenant_id;
+                credentialsForm.dynamics_client_id = response.data.data.dynamics_client_id;
+                credentialsForm.dynamics_url = response.data.data.dynamics_url;
+                credentialsForm.dynamics_client_secret = response.data.data.dynamics_client_secret;
+                console.log(response.data);
+            }).catch(error => {
+                console.log(error);
+            })
+        }
 
         onMounted(() => {
+            getCredentials();
             window.Pusher.logToConsole = true;
 
             const pusher = new Pusher(import.meta.env.VITE_PUSHER_APP_KEY, {
@@ -144,10 +165,7 @@ export default {
                 statusMessage.value = data.message;
             });
         });
-
-
-
-        return { storeCredentials, executeProcess, credentialsForm, loading, statusMessage }
+        return { storeCredentials, getCredentials, executeProcess, credentialsForm, loading, statusMessage }
     }
 }
 </script>
