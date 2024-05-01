@@ -17,7 +17,6 @@ const app = createApp({
     if (JSON.parse(localStorage.getItem('loggedIn'))) {
       onMounted(getUser)
     }
-    console.log('hello again');
   }
 });
 

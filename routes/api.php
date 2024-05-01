@@ -1,6 +1,8 @@
 <?php
 
 use App\Http\Controllers\CredentialsController;
+use App\Http\Controllers\CustomerController;
+use App\Http\Controllers\UserController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
@@ -15,9 +17,7 @@ use Illuminate\Support\Facades\Route;
 |
 */
 
-Route::middleware('auth:sanctum')->get('/user', function (Request $request) {
-    return $request->user();
-});
+Route::middleware('auth:sanctum')->get('/info/user', UserController::class);
 
 // Route::get('dynamics/connect', [CredentialsController::class , 'connect']);
 Route::post('dynamics/execute', [CredentialsController::class, 'execute']);
@@ -26,4 +26,10 @@ Route::post('dynamics/execute', [CredentialsController::class, 'execute']);
 Route::group(['middleware' => 'auth:sanctum'], function () {
     Route::get('get/credentials', [CredentialsController::class, 'index']);
     Route::post('store/credentials', [CredentialsController::class, 'store']);
+});
+Route::middleware(['auth:sanctum', 'admin'])->group(function () {
+    Route::apiResource('customers', CustomerController::class);
+    Route::get('show/credentials/{id}', [CredentialsController::class, 'show']);
+    Route::put('update/credentials/{id}', [CredentialsController::class, 'update']);
+
 });

@@ -16,18 +16,15 @@ class Credential extends Model
         'tak_login',
         'tak_password',
         'sharepoint_url',
-        'sharepoint_login',
-        'sharepoint_password',
+        'sharepoint_client_id',
+        'sharepoint_client_secret',
+        'sharepoint_tenant_id',
         'dynamics_url',
-        'dynamics_login',
-        'dynamics_password',
+        'dynamics_client_id',
+        'dynamics_client_secret',
     ];
 
-    protected $hidden = [
-        'tak_password',
-        'sharepoint_password',
-        'dynamics_password',
-    ];
+
     public function user() : BelongsTo {
 
         return $this->BelongsTo(User::class);

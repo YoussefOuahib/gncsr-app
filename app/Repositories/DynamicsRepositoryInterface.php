@@ -5,21 +5,21 @@ use Illuminate\Http\Request;
 
 interface DynamicsRepositoryInterface
 {
-    public function connect($url, $applicationId, $applicationSecret);
+    public function connect();
     
-    public function getContactByEmail($service, $email);
+    public function getContactByEmail(String $email);
 
-    public function createNewContact($service, $username);
+    public function createNewContact(String $username);
 
-    public function getContactId($service, $email);
+    public function getContactId(String $email);
     
-    public function createVolunteer($service, $user, $contactId);
+    public function createVolunteer($user, String $contactId);
 
-    public function updateMissingPerson($service, $incidentId);
+    public function updateMissingPerson(String $incidentId);
 
-    public function getAllIncidents($service);
+    public function getAllIncidents();
 
-    public function getIncidentWithDownloadZipFeature($service);
+    public function getIncidentWithDownloadZipFeature();
 
-
+    public function updateIncident(String $incidentId) : void;
 }

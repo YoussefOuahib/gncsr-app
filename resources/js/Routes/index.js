@@ -5,7 +5,8 @@ import Login from '../Pages/Auth/Login.vue'
 import Register from '../Pages/Auth/Register.vue'
 import Home from '../Pages/Home.vue'
 import Mission from "../Pages/Mission.vue"
-
+import Customer from "../Pages/Customer.vue"
+import Profile from "../Pages/Profile/Edit.vue"
 
 function auth(to, from, next) {
 
@@ -15,7 +16,6 @@ function auth(to, from, next) {
     if (from.path == '/' && !JSON.parse(localStorage.getItem('loggedIn'))) {
         next('login')
     }
-
     next('/login')
 
 }
@@ -24,7 +24,7 @@ const routes = [
     {
         component: GuestLayout,
         path: '/',
-        redirect: { name: 'missions' },
+        redirect: { name: 'synchronization' },
         children: [
          
             {
@@ -43,14 +43,18 @@ const routes = [
 
         component: AuthenticatedLayout,
         beforeEnter: auth,
-
         children: [
             {
-
-                path: '/missions',
-                name: 'missions',
+                path: '/synchronization',
+                name: 'synchronization',
                 component: Mission
             },
+            {
+                path: '/customers',
+                name: 'customers',
+                component: Customer
+            },
+            
         ]
     },
 

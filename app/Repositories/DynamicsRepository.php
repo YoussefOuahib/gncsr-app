@@ -17,19 +17,26 @@ use Illuminate\Support\Facades\Storage;
 
 
 class DynamicsRepository implements DynamicsRepositoryInterface {
-
-    public function connect($url, $applicationId, $applicationSecret) {
+    protected $service;
+    public function __construct()
+    {
+        $this->service = $this->connect();
+    }
+    public function connect() {
         try {
+            $url = Credential::where('user_id', auth()->user()->id)->first()->dynamics_url;
+            $applicationId = Credential::where('user_id', auth()->user()->id)->first()->dynamics_client_id;
+            $applicationSecret = Credential::where('user_id', auth()->user()->id)->first()->dynamics_client_secret;
+
             $settings = new OnlineSettings();
             $settings->instanceURI = $url;
             $settings->applicationID = $applicationId;
             $settings->applicationSecret = $applicationSecret;
-
             return ClientFactory::createOnlineClient(
                 $url,
                 $applicationId,
                 $applicationSecret,
-            );
+            ); 
         } catch (\Exception $ex) {
             // Handle exceptions
             Log::error($ex->getMessage());
@@ -37,7 +44,7 @@ class DynamicsRepository implements DynamicsRepositoryInterface {
             return null;
         }
     }
-    public function getContactByEmail($service, $takEmail) {
+    public function getContactByEmail( $takEmail) {
         try {
     
             $email = null;
@@ -54,7 +61,7 @@ class DynamicsRepository implements DynamicsRepositoryInterface {
             </fetch>
             FETCHXML;
             $fetchExpression = new FetchExpression($fetchXML);
-            $collection = $service->RetrieveMultiple($fetchExpression);
+            $collection = $this->service->RetrieveMultiple($fetchExpression);
             $records = json_decode(json_encode($collection), true);
             $entities = $records['Entities'];
 
@@ -72,7 +79,7 @@ class DynamicsRepository implements DynamicsRepositoryInterface {
         }
     }
 
-    public function createNewContact($service, $username)
+    public function createNewContact($username)
     {
         try {
             //retrieve contacts from Dynamics
@@ -87,7 +94,7 @@ class DynamicsRepository implements DynamicsRepositoryInterface {
                 $contact['firstname'] = substr($username, 0, 1);
                 $contact['lastname'] = substr($username, 1);
             }
-            $service->Create($contact);
+            $this->service->Create($contact);
             return $contact;
         } catch (\Exception $ex) {
             // Handle exceptions
@@ -97,7 +104,7 @@ class DynamicsRepository implements DynamicsRepositoryInterface {
         }
     }
 
-    public function getContactId($service, $email)
+    public function getContactId($email)
     {
         $fetchXML = <<<FETCHXML
             <fetch mapping="logical"> 
@@ -111,21 +118,21 @@ class DynamicsRepository implements DynamicsRepositoryInterface {
             </fetch>
             FETCHXML;
         $fetchExpression = new \AlexaCRM\Xrm\Query\FetchExpression($fetchXML);
-        $collection = $service->RetrieveMultiple($fetchExpression);
+        $collection = $this->service->RetrieveMultiple($fetchExpression);
         $records = json_decode(json_encode($collection), true);
         $entities = $records['Entities'];
         $contactid = $entities[0]["Attributes"]["contactid"];
         return $contactid;
     }
 
-    public function createVolunteer($service, $user, $contactId)
+    public function createVolunteer($user, $contactId)
     {
         try {
             $volunteer = new Entity('cct_volunteer');
             $volunteer['emailaddress'] = $user['username'] . '@tak.com';
             $volunteer['cct_name'] = $user['username'];
             $volunteer['cct_volunteercontactinfo'] = $contactId;
-            $service->Create($volunteer);
+            $this->service->Create($volunteer);
         } catch (\Exception $ex) {
             // Handle exceptions
             Log::error($ex->getMessage());
@@ -134,7 +141,7 @@ class DynamicsRepository implements DynamicsRepositoryInterface {
         }
     }
 
-    public function getAllIncidents($service)
+    public function getAllIncidents()
     {
         try {
             $fetchXML = <<<FETCHXML
@@ -148,7 +155,7 @@ class DynamicsRepository implements DynamicsRepositoryInterface {
             </fetch>
             FETCHXML;
             $fetchExpression = new FetchExpression($fetchXML);
-            $collection = $service->RetrieveMultiple($fetchExpression);
+            $collection = $this->service->RetrieveMultiple($fetchExpression);
             $records = json_decode(json_encode($collection), true);
             $entities = $records['Entities'];
       
@@ -170,7 +177,7 @@ class DynamicsRepository implements DynamicsRepositoryInterface {
             return response()->json(['error' => 'An error occurred.'], 500);
         }
     }
-    public function updateMissingPerson($service, $incidentId)
+    public function updateMissingPerson($incidentId)
     {
         try {
             $storagePath = '/public/incidents';
@@ -182,7 +189,7 @@ class DynamicsRepository implements DynamicsRepositoryInterface {
             $query = new QueryByAttribute('incident');
             $query->AddAttributeValue('incidentid', $incidentId);
 
-            $retrievedMissingPerson = $service->Retrieve('incident', $incidentId, new \AlexaCRM\Xrm\ColumnSet([
+            $retrievedMissingPerson = $this->service->Retrieve('incident', $incidentId, new \AlexaCRM\Xrm\ColumnSet([
                 'cct_height', 'cct_hair', 'cct_eyes', 'cct_fitness', 'cct_sex', 'cct_build', 'cct_doesnotspeakenglish', 'cct_experience',
                 'cct_distinguishingmarks', 'cct_cooperation', 'cct_answersto', 'cct_age', 'cct_weight', 'cct_missingperson',
                 'cct_medications', 'cct_medicathistory', 'cct_allergies', 'cct_equipment', 'cct_disabilities', 'cct_clothing', 'cct_foorwear',
@@ -360,12 +367,12 @@ class DynamicsRepository implements DynamicsRepositoryInterface {
             return response()->json(['error' => 'An error occurred.'], 500);
         }
     }
-    public function getIncidentWithDownloadZipFeature($service) {
+    public function getIncidentWithDownloadZipFeature() {
         try {
             $query = new QueryByAttribute('incident');
             $query->AddAttributeValue('cct_downloadzipfile', true);
             $query->ColumnSet = new \AlexaCRM\Xrm\ColumnSet(['incidentid', 'cct_downloadzipfile', 'title', 'ticketnumber']);
-            $collection = $service->RetrieveMultiple($query);
+            $collection = $this->service->RetrieveMultiple($query);
 
             $data = json_decode(json_encode($collection), true);
             $entities = $data['Entities'];
@@ -377,25 +384,12 @@ class DynamicsRepository implements DynamicsRepositoryInterface {
             return response()->json(['error' => 'An error occurred.'], 500);
         }
     }
-    public function fetchZipFile($caseTicketNumber, $token)
+    
+    public function updateIncident(string $incidentId): void
     {
-        $takurl = Credential::first()->tak_url;
-
-        $response = Http::withoutVerifying()->withHeaders(['Authorization' => 'Bearer ' . $token])
-            ->get($takurl . '/Marti/api/missions/' . $caseTicketNumber . '/archive');
-
-        Log::info('hello fetch zip file');
-        return $response->body();
-    }
-    public function fetchKmlFile($caseTicketNumber, $token)
-    {
-        $takurl = Credential::first()->tak_url;
-
-        $response = Http::withoutVerifying()->withHeaders(['Authorization' => 'Bearer ' . $token])
-            ->get($takurl . '/Marti/api/missions/' . $caseTicketNumber . '/kml');
-
-        Log::info('hello fetch zip file');
-        return $response->body();
+        $record = new \AlexaCRM\Xrm\Entity('incident', $incidentId );
+        $record['cct_downloadzipfile'] = false;
+        $this->service->Update( $record );
     }
 
 }
