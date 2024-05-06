@@ -14,7 +14,7 @@ class SharePointRepository implements SharePointRepositoryInterface
     protected $accessToken;
     public function __construct()
     {
-        $this->sharePointUrl = Credential::where('user_id', auth()->user()->id)->first();
+        $this->sharePointUrl = Credential::where('user_id', auth()->user()->id)->first()->sharepoint_url;
         $this->sitePath = parse_url($this->sharePointUrl);
         $this->accessToken = $this->connect();
     }

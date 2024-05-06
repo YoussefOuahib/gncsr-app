@@ -18,20 +18,23 @@ use Illuminate\Support\Facades\Storage;
 
 class DynamicsRepository implements DynamicsRepositoryInterface {
     protected $service;
-    public function __construct()
-    {
-        $this->service = $this->connect();
-    }
-    public function connect() {
+    protected $userId;
+    public function connect(int $userId) {
         try {
-            $url = Credential::where('user_id', auth()->user()->id)->first()->dynamics_url;
-            $applicationId = Credential::where('user_id', auth()->user()->id)->first()->dynamics_client_id;
-            $applicationSecret = Credential::where('user_id', auth()->user()->id)->first()->dynamics_client_secret;
+            $this->userId = $userId;
+            $url = Credential::where('user_id', $this->userId)->first()->dynamics_url;
+            $applicationId = Credential::where('user_id', $this->userId)->first()->dynamics_client_id;
+            $applicationSecret = Credential::where('user_id', $this->userId)->first()->dynamics_client_secret;
 
             $settings = new OnlineSettings();
             $settings->instanceURI = $url;
             $settings->applicationID = $applicationId;
             $settings->applicationSecret = $applicationSecret;
+            $this->service = ClientFactory::createOnlineClient(
+                $url,
+                $applicationId,
+                $applicationSecret,
+            ); 
             return ClientFactory::createOnlineClient(
                 $url,
                 $applicationId,

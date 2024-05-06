@@ -17,9 +17,9 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        // $this->app->bind(TakRepositoryInterface::class, TakRepository::class);
-        // $this->app->bind(DynamicsRepositoryInterface::class, DynamicsRepository::class);
-        // $this->app->bind(SharePointRepositoryInterface::class, SharePointRepository::class);
+        $this->app->bind(TakRepositoryInterface::class, TakRepository::class);
+        $this->app->bind(DynamicsRepositoryInterface::class, DynamicsRepository::class);
+        $this->app->bind(SharePointRepositoryInterface::class, SharePointRepository::class);
     }
 
     /**

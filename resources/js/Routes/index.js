@@ -7,24 +7,33 @@ import Home from '../Pages/Home.vue'
 import Mission from "../Pages/Mission.vue"
 import Customer from "../Pages/Customer.vue"
 import Profile from "../Pages/Profile/Edit.vue"
+import useAuth from "@/Comopsables/auth";
+import { onMounted } from "vue";
 
 function auth(to, from, next) {
+    const loggedIn = JSON.parse(localStorage.getItem('loggedIn'));
+    const isAdmin = JSON.parse(localStorage.getItem('isAdmin'));
 
-    if (JSON.parse(localStorage.getItem('loggedIn'))) {
-        next()
+    if (loggedIn) {
+        if (to.path === '/' && isAdmin) {
+            next('/customers'); // Redirect admin from root to /customers
+        }
+        
+        if (to.name === 'synchronization' && isAdmin) {
+            next('/customers'); 
+        } else {
+            next();
+        }
+    } else {
+        next('/login'); // Redirect to login if not logged in
     }
-    if (from.path == '/' && !JSON.parse(localStorage.getItem('loggedIn'))) {
-        next('login')
-    }
-    next('/login')
-
 }
 
 const routes = [
     {
         component: GuestLayout,
         path: '/',
-        redirect: { name: 'synchronization' },
+        redirect: { name: 'login' },
         children: [
          
             {

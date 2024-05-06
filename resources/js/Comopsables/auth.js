@@ -37,8 +37,18 @@ export default function useAuth() {
     const loginUser = async (response) => {
         user.name = response.data.name;
         user.email = response.data.email;
+        isAdmin.value = response.data.is_admin;
         localStorage.setItem("loggedIn", JSON.stringify(true));
-        await router.push({ name: "syncronization" });
+        if(isAdmin.value) {
+            localStorage.setItem('isAdmin', JSON.stringify(true));
+            await router.push({ path: "/customers" });
+
+        }
+        else {
+            localStorage.setItem('isAdmin', JSON.stringify(false));
+            await router.push({ path: "/synchronization" });
+
+        }
     };
 
     const getUser = () => {
@@ -49,16 +59,14 @@ export default function useAuth() {
     const checkIfUserIsAdmin = () => {
         axios.get("/api/info/user").then((response) => {
             console.log('hello world');
-            isAdmin.value = response.data.is_admin;
-            console.log(response.data.is_admin);
-
+           
         }).catch((error) => console.log(error));
     }
 
     const logout = async () => {
         axios.post("logout").then(response => {
             localStorage.setItem('loggedIn', JSON.stringify(false))
-            router.push({ name: "home" })
+            router.push({ path: "/login" })
         });
     };
     return {

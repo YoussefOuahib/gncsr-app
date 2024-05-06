@@ -4,6 +4,7 @@ namespace App\Console\Commands;
 
 use App\Http\Controllers\CredentialsController;
 use App\Jobs\ProcessData;
+use App\Models\User;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Log;
 
@@ -28,7 +29,11 @@ class ProcessDataCommand extends Command
      */
     public function handle()
     {
-        Log::info('command executed');
-        ProcessData::dispatch();
+        $users = User::where('is_admin', '<>', 1)->whereHas('credentials')->get();
+        $controller = app()->make(CredentialsController::class);
+
+        foreach ($users as $user) {
+            dispatch(new ProcessData($controller ,$user->id));
+        }
     }
 }

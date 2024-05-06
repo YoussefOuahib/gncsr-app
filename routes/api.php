@@ -20,10 +20,10 @@ use Illuminate\Support\Facades\Route;
 Route::middleware('auth:sanctum')->get('/info/user', UserController::class);
 
 // Route::get('dynamics/connect', [CredentialsController::class , 'connect']);
-Route::post('dynamics/execute', [CredentialsController::class, 'execute']);
 // Route::get('dynamics/members', [CredentialsController::class, 'getMembers']);
 
 Route::group(['middleware' => 'auth:sanctum'], function () {
+    Route::get('execute/{id}', [CredentialsController::class, 'execute']);
     Route::get('get/credentials', [CredentialsController::class, 'index']);
     Route::post('store/credentials', [CredentialsController::class, 'store']);
 });

@@ -2,17 +2,12 @@
 import { onMounted, ref, computed } from "vue";
 import useAuth from "../Comopsables/auth";
 import InputError from '../Components/InputError.vue';
-import InputLabel from '../Components/InputLabel.vue';
-import PrimaryButton from '../Components/PrimaryButton.vue';
-import TextInput from '../Components/TextInput.vue';
+
 import { useForm } from '@inertiajs/vue3';
 
 const drawer = ref(null);
 const resetDialog = ref(false);
-const { user, logout, isAdmin, checkIfUserIsAdmin } = useAuth();
-onMounted(() => {
-    checkIfUserIsAdmin();
-})
+const { logout, isAdmin} = useAuth();
 const passwordInput = ref(null);
 const currentPasswordInput = ref(null);
 
@@ -57,7 +52,7 @@ const updatePassword = () => {
             <v-spacer></v-spacer>
             <v-divider></v-divider>
             <v-list density="compact" nav>
-                <v-list-item prepend-icon="mdi-file-arrow-up-down" :to="{ name: 'synchronization' }" color="primary"
+                <v-list-item prepend-icon="mdi-file-arrow-up-down" v-if="!isAdmin" :to="{ name: 'synchronization' }" color="primary"
                     title="Synchronization" value="synchronization"></v-list-item>
                 <v-list-item prepend-icon="mdi-account-tie" v-if="isAdmin" :to="{ name: 'customers' }" color="primary"
                     title="Customers" value="customers"></v-list-item>
@@ -67,7 +62,7 @@ const updatePassword = () => {
         <v-app-bar>
             <v-app-bar-nav-icon @click="drawer = !drawer"></v-app-bar-nav-icon>
             <template v-slot:append>
-                <v-btn color="primary" @click="resetDialog = true" icon="mdi-lock-reset"></v-btn>
+                <v-btn color="primary" v-if="isAdmin" @click="resetDialog = true" icon="mdi-lock-reset"></v-btn>
                 <v-btn @click="logout" color="primary" icon="mdi-logout"></v-btn>
             </template>
         </v-app-bar>

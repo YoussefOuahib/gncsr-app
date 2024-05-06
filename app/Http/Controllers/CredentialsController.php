@@ -35,7 +35,12 @@ class CredentialsController extends Controller
     /**
      * Handle the incoming request.
      */
-
+    protected $userId;
+    protected $takurl;
+    protected $token;
+    protected $service;
+    protected $sharePointUrl;
+    protected $accessToken;
     public function store(Request $request)
     {
         Credential::updateOrCreate(
@@ -81,9 +86,7 @@ class CredentialsController extends Controller
     }
     public function index()
     {
-
         $data = Credential::where('user_id', auth()->user()->id)->first();
-
         return new CredentialsResource($data);
     }
     public function show($userId)
@@ -93,30 +96,31 @@ class CredentialsController extends Controller
             'credential' => $credential
         ], 200);
     }
-    public function execute()
+    public function execute($userId)
     {
+        $this->userId = $userId;
+        $user = User::find($this->userId);
+        if ($user->is_admin || !$user->credentials()->exists()) {
+            abort(401, "you don't have connection system");
+        }
+        $this->takurl = Credential::where('user_id', $this->userId)->first()->tak_url;
+        $this->sharePointUrl = Credential::where('user_id', $this->userId)->first()->sharepoint_url;
         Log::info('hello execute');
-        // Replace these values with your Dynamics 365 details
-        $organizationUri = Credential::first()->dynamics_url;
-        $applicationId = Credential::first()->dynamics_client_id;
-        $applicationSecret = Credential::first()->dynamics_client_secret;
-
         // Connect to Dynamics
-        $service = $this->connect($organizationUri, $applicationId, $applicationSecret);
+        $this->service = $this->connect();
         event(new SendResponseEvent('Connecting to Microsoft Dynamics'));
-        Log::info('connection has been set');
         //get bearer token
         event(new SendResponseEvent('Connecting to Tak Server'));
-        $token = $this->getBearerToken();
+        $this->token = $this->getBearerToken();
 
         event(new SendResponseEvent('Retrieving Contacts from Tak'));
-        $users = $this->getContactsFromTak($token);
-        $missions = $this->getMissionsFromTak($token);
+        $users = $this->getContactsFromTak($this->token);
+        $missions = $this->getMissionsFromTak($this->token);
 
         // //compare contacts from Dynamics with contacts from TAK then create new contacts in Dynamics
-        $this->compareContacts($service, $users);
+        $this->compareContacts($this->service, $users);
         event(new SendResponseEvent('Retrieving Incidents'));
-        $incidents = $this->getAllIncidents($service);
+        $incidents = $this->getAllIncidents($this->service);
         foreach ($incidents as $incident) {
         event(new SendResponseEvent('Creating mission in tak server'));
         foreach ($missions as $mission) {
@@ -125,7 +129,7 @@ class CredentialsController extends Controller
 
             if($mission['name'] != $incident['Attributes']['ticketnumber']) {
                 Log::info('creating mission !');
-                $this->createMission($incident['Attributes']['ticketnumber'], $incident['Attributes']['title'], $token);
+                $this->createMission($incident['Attributes']['ticketnumber'], $incident['Attributes']['title'], $this->token);
             }else {
                 Log::info('mission already exists');
             }
@@ -133,50 +137,55 @@ class CredentialsController extends Controller
             event(new SendResponseEvent('Updating missing person informations'));
 
             if ($incident['Attributes']['cct_missingpersoninformationupdated']) {
-                $filePath = $this->updateMissingPerson($service, $incident['Attributes']['incidentid']);
+                $filePath = $this->updateMissingPerson($this->service, $incident['Attributes']['incidentid']);
                 event(new SendResponseEvent('Uploading file to tak server'));
-                $hash = $this->uploadFileToTakServer($token, $filePath);
-                $this->associateFileToMission($token, $hash, $incident['Attributes']['ticketnumber']);
-                $this->markMissingInfoUpdatedFeatureAsFalse($service, $incident['Attributes']['incidentid']);
+                $hash = $this->uploadFileToTakServer($this->token, $filePath);
+                $this->associateFileToMission($this->token, $hash, $incident['Attributes']['ticketnumber']);
+                $this->markMissingInfoUpdatedFeatureAsFalse($this->service, $incident['Attributes']['incidentid']);
             }
-        }
+         }
         // //get all cases with download feature
         event(new SendResponseEvent('Retrieving incidents with Download Zip Feature'));
 
-        $cases = $this->getIncidentWithDownloadZipFeature($service);
+        $cases = $this->getIncidentWithDownloadZipFeature($this->service);
         foreach ($cases as $case) {
-            if ($token) {
+            if ($this->token) {
                 //                 //validate folder name
                 event(new SendResponseEvent('Generating Folder Name'));
                 $folderName = $this->validateFolderName($case['Attributes']['title'], $case['Attributes']['incidentid']);
                 //      create a tak mission //
                 //      fetch zip file
-                $zip = $this->fetchZipFile($case, $missions, $token);
+                $zip = $this->fetchZipFile($case, $missions, $this->token);
                 //         //          fetch kml file
-                $kml = $this->fetchKmlFile($case, $missions, $token);
-                $accessToken = $this->getAccessToken();
+                $kml = $this->fetchKmlFile($case, $missions, $this->token);
+                $this->accessToken = $this->getAccessToken();
+                if($zip || $kml) {
+                    $this->createFolderInSharePoint($folderName);
+                }
                 if ($zip) {
-                    $this->createFolderInSharePoint($accessToken, $folderName);
-                    $this->uploadFileToSharePoint($zip, $folderName, 'zip', $case, $accessToken);
+                    $this->uploadFileToSharePoint($zip ,$folderName, 'zip', $case);
                 }
                 if ($kml) {
-                    $this->uploadFileToSharePoint($kml, $folderName, 'kml', $case, $accessToken);
+                    $this->uploadFileToSharePoint($kml, $folderName, 'kml', $case);
                 }
-                $this->updateIncident($service, $case['Attributes']['incidentid']);
+                // $this->updateIncident($this->service, $case['Attributes']['incidentid']);
 
             }
         }
     }
-    private function connect($url, $applicationId, $applicationSecret)
+    private function connect()
     {
         try {
+            $organizationUri = Credential::where('user_id', $this->userId)->first()->dynamics_url;
+            $applicationId = Credential::where('user_id', $this->userId)->first()->dynamics_client_id;
+            $applicationSecret = Credential::where('user_id', $this->userId)->first()->dynamics_client_secret;
             $settings = new OnlineSettings();
-            $settings->instanceURI = $url;
+            $settings->instanceURI = $organizationUri;
             $settings->applicationID = $applicationId;
             $settings->applicationSecret = $applicationSecret;
 
             return ClientFactory::createOnlineClient(
-                $url,
+                $organizationUri,
                 $applicationId,
                 $applicationSecret,
             );
@@ -190,7 +199,7 @@ class CredentialsController extends Controller
     private function getContactsFromTak($token)
     {
         Log::info('hello from tak contacts');
-        $baseUrl = Credential::first()->tak_url . '/user-management/api/list-users';
+        $baseUrl = $this->takurl . '/user-management/api/list-users';
         $response = Http::withoutVerifying()->withHeaders(['Authorization' => 'Bearer ' . $token])->get($baseUrl);
         if ($response->successful()) {
             $users = json_decode($response->getBody(), true);
@@ -203,8 +212,7 @@ class CredentialsController extends Controller
     private function getMissionsFromTak($token)
     {
         try {
-            $takurl = Credential::first()->tak_url;
-            $baseUrl = $takurl . '/Marti/api/missions';
+            $baseUrl = $this->takurl . '/Marti/api/missions';
             $response = Http::withoutVerifying()->withHeaders(['Authorization' => 'Bearer ' . $token])->get($baseUrl);
             if ($response->successful()) {
                 $missions = json_decode($response->getBody(), true)['data'];
@@ -220,12 +228,12 @@ class CredentialsController extends Controller
     {
         Log::info('hello bearer token');
         try {
-            $baseUrl = Credential::first()->tak_url . '/oauth/token';
+            $baseUrl = $this->takurl . '/oauth/token';
 
-            $response = Http::withoutVerifying()->get($baseUrl, [
+            $response = Http::withoutVerifying()->timeout(60)->get($baseUrl, [
                 'grant_type' => 'password',
-                'username' => Credential::first()->tak_login,
-                'password' => Credential::first()->tak_password,
+                'username' => Credential::where('user_id', $this->userId)->first()->tak_login,
+                'password' => Credential::where('user_id', $this->userId)->first()->tak_password,
             ]);
 
             // Check if the response was successful
@@ -347,10 +355,10 @@ class CredentialsController extends Controller
     }
     private function getAccessToken()
     {
-        $tenantId = Credential::first()->sharepoint_tenant_id;
-        $clientId = Credential::first()->sharepoint_client_id . '@' . $tenantId;
-        $clientSecret = Credential::first()->sharepoint_client_secret;
-        $parts = parse_url(Credential::first()->sharepoint_url);
+        $tenantId = Credential::where('user_id', $this->userId)->first()->sharepoint_tenant_id;
+        $clientId = Credential::where('user_id', $this->userId)->first()->sharepoint_client_id . '@' . $tenantId;
+        $clientSecret = Credential::where('user_id', $this->userId)->first()->sharepoint_client_secret;
+        $parts = parse_url(Credential::where('user_id', $this->userId)->first()->sharepoint_url);
         $host = $parts['host'];
         $url = "https://accounts.accesscontrol.windows.net/$tenantId/tokens/OAuth/2";
         $response = Http::asForm()->post($url, [
@@ -360,7 +368,6 @@ class CredentialsController extends Controller
             'resource' => '00000003-0000-0ff1-ce00-000000000000/' . $host . '@' . $tenantId,
         ]);
         $responseJson = json_decode($response->getBody(), true);
-
         return $responseJson['access_token'];
     }
     private function updateMissingPerson($service, $incidentId)
@@ -555,9 +562,6 @@ class CredentialsController extends Controller
     }
     private function uploadFileToTakServer($token, $file)
     {
-
-
-        $takurl = Credential::first()->tak_url;
         try {
             // Check if the file exists
             // Read the file content
@@ -573,7 +577,7 @@ class CredentialsController extends Controller
             $response = Http::withoutVerifying()->withHeaders([
                 'Authorization' => 'Bearer ' . $token,
                 'Content-Type' => 'application/json',
-            ])->attach('file', $bodyContent, $originalFileName)->post($takurl . '/Marti/sync/upload', [
+            ])->attach('file', $bodyContent, $originalFileName)->post($this->takurl . '/Marti/sync/upload', [
                 'originalFileName' => $originalFileName,
             ]);
             $data = json_decode($response->getBody(), true);
@@ -586,11 +590,10 @@ class CredentialsController extends Controller
     private function associateFileToMission($token, $hash, $missionName)
     {
         try {
-            $takurl = Credential::first()->tak_url;
             $response = Http::withoutVerifying()->withHeaders([
                 'Authorization' => 'Bearer ' . $token,
                 'Content-Type' => 'application/json',
-            ])->put($takurl . '/Marti/api/missions/' . $missionName . '/contents', [
+            ])->put($this->takurl . '/Marti/api/missions/' . $missionName . '/contents', [
                 'hashes' => [$hash],
             ]);
 
@@ -632,10 +635,10 @@ class CredentialsController extends Controller
                 // Convert date to Carbon instance
                 $createdAt = Carbon::parse($item['FormattedValues']['createdon']);
 
-                // $isValidDate = $createdAt->diffInMinutes(now()) <= 10;
+                $isValidDate = $createdAt->diffInMinutes(now()) <= 10;
 
                 // Return true if both conditions are met
-                return $isValidType;
+                return $isValidType && $isValidDate; 
             })->values();
 
             return $filteredData;
@@ -666,22 +669,18 @@ class CredentialsController extends Controller
     }
     private function fetchZipFile($case, $missions, $token)
     {
-        $takurl = Credential::first()->tak_url;
-            foreach ($missions as $mission) {
+        Log::info('hello fetch zip');
+        foreach ($missions as $mission) {
             if ($mission['name'] == strtoupper($case['Attributes']['ticketnumber'])) {
                 $contents = $mission['contents'];
+                Log::info($mission['name']);
                 foreach ($contents as $content) {
+                    Log::info('zip: ');
+                    Log::info($content);
                     if ($content['data']['mimeType'] === 'application/x-zip-compressed' || $content['data']['mimeType'] == 'application/zip') {
-                        Log::info("here we go zip");
                         $response = Http::timeout(60)->withoutVerifying()->withHeaders(['Authorization' => 'Bearer ' . $token])
-                            ->get($takurl . '/Marti/api/missions/' . strtolower($case['Attributes']['ticketnumber']) . '/archive');
+                            ->get($this->takurl . '/Marti/api/missions/' . strtolower($case['Attributes']['ticketnumber']) . '/archive');
                         if ($response->successful()) {
-                            $fileName = $case['Attributes']['title'] . '_' . Carbon::parse($case['Attributes']['createdon'])->format('Y-m-d') . '.' . 'zip';
-                            $path = 'app/public/downloads/' . $fileName . '.zip';
-                            if (file_exists($path)) {
-                                unlink($path);
-                            }
-                            Storage::put('public/downloads/' . $fileName, $response->getBody());
                             return $response->getBody();
                         }
                     }
@@ -693,7 +692,7 @@ class CredentialsController extends Controller
 
     private function createMission($missionName, $description, $token)
     {
-        $baseUrl = Credential::first()->tak_url . '/Marti/api/missions/' . $missionName;
+        $baseUrl = $this->takurl . '/Marti/api/missions/' . $missionName;
         $response = Http::withoutVerifying()->withHeaders(['Authorization' => 'Bearer ' . $token])
             ->put($baseUrl, [
                 'description' => $description,
@@ -727,36 +726,31 @@ class CredentialsController extends Controller
     {
         Log::info('hello fetch kml');
 
-        $takurl = Credential::first()->tak_url;
         foreach ($missions as $mission) {
             if ($mission['name'] == strtoupper($case['Attributes']['ticketnumber'])) {
                 $contents = $mission['contents'];
                 foreach ($contents as $content) {
+                    Log::info('kml: ');
+                    Log::info($content);
                     if ($content['data']['mimeType'] === 'application/octet-stream') {
                         Log::info('kml file');
                         $response = Http::timeout(60)->withoutVerifying()->withHeaders(['Authorization' => 'Bearer ' . $token])
-                            ->get($takurl . '/Marti/api/missions/' . strtolower($case['Attributes']['ticketnumber']) . '/kml');
-
-                        if ($response->successful()) {
-                            $fileName = $case['Attributes']['title'] . '_' . Carbon::parse($case['Attributes']['createdon'])->format('Y-m-d') . '.' . 'kml';
-                            Storage::put('public/downloads/' . $fileName, $response->getBody());
+                            ->get($this->takurl . '/Marti/api/missions/' . strtolower($case['Attributes']['ticketnumber']) . '/kml');
                             return $response->getBody();
-                        }
+                        
                     }
                 }
             }
         }
         return null;
     }
-    private function uploadFileToSharePoint($file, $folderName, $fileType, $case, $accessToken)
+    private function uploadFileToSharePoint($file, $folderName, $fileType, $case)
     {
         try {
-            $siteUrl = Credential::first()->sharepoint_url;
             $fileName = $case['Attributes']['title'] . '_' . Carbon::parse($case['Attributes']['createdon'])->format('Y-m-d') . '.' . $fileType;
-            $path = public_path('downloads/' . $fileName);
             Http::withHeaders([
-                'Authorization' => "Bearer $accessToken",
-            ])->attach('file', $path, $fileName)->post("$siteUrl/_api/web/GetFolderByServerRelativeUrl('/sites/gsarics/incident/$folderName')/files/add(url='$fileName',overwrite=true)");
+                'Authorization' => "Bearer $this->accessToken",
+            ])->attach('file', $file, $fileName)->post("$this->sharePointUrl/_api/web/GetFolderByServerRelativeUrl('/sites/gsarics/incident/$folderName')/files/add(url='$fileName',overwrite=true)");
         } catch (\Exception $ex) {
             // Handle exceptions
             Log::error($ex->getMessage());
@@ -764,16 +758,15 @@ class CredentialsController extends Controller
             return response()->json(['error' => 'An error occurred.'], 500);
         }
     }
-    private function createFolderInSharePoint($token, $folderName)
+    private function createFolderInSharePoint($folderName)
     {
         try {
-            $siteUrl = Credential::first()->sharepoint_url;
 
-            $isFolderExists = Http::withoutVerifying()->withHeaders(['Authorization' => 'Bearer ' . $token, 'Accept' => 'application/json; odata=verbose'])
-                ->get($siteUrl . "/_api/web/GetFolderByServerRelativeUrl('/sites/gsarics/incident/" . $folderName . "')");
+            $isFolderExists = Http::withoutVerifying()->withHeaders(['Authorization' => 'Bearer ' . $this->accessToken, 'Accept' => 'application/json; odata=verbose'])
+                ->get($this->sharePointUrl . "/_api/web/GetFolderByServerRelativeUrl('/sites/gsarics/incident/" . $folderName . "')");
             if ($isFolderExists->status() == 404) {
-                $response = Http::withoutVerifying()->withHeaders(['Authorization' => 'Bearer ' . $token])
-                    ->post($siteUrl . "/_api/web/folders", [
+                $response = Http::withoutVerifying()->withHeaders(['Authorization' => 'Bearer ' . $this->accessToken])
+                    ->post($this->sharePointUrl . "/_api/web/folders", [
                         "ServerRelativeUrl" => "/sites/gsarics/incident/" . $folderName,
                     ]);
             }

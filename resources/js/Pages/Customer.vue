@@ -3,9 +3,12 @@ import { ref, onMounted, reactive } from "vue";
 import useCustomers from '@/Comopsables/customers';
 import axios from "axios";
 const dialog = ref(false);
+const snackbar = ref(false);
+const loading = ref(false);
 const editUserCredentialsDialog = ref(false);
 const credentialsDialog = ref(false);
 const selectedUser = ref();
+const statusMessage = ref('');
 const credentialsForm = ref({
   tak_url: '', tak_login: '', tak_password: '',
   sharepoint_url: '', sharepoint_client_id: '', sharepoint_client_secret: '', sharepoint_tenant_id: '',
@@ -44,6 +47,14 @@ const showCredentials = async (userId) => {
     console.log(error);
   });
 }
+const synchronization = async (userId) => {
+  loading.value = true;
+  axios.get("/api/execute/" + userId).catch((error) => {
+    console.log(error);
+  }).finally(() => {
+    loading.value = false;
+  })
+}
 
 const showConnectionInformations = async (userId) => {
   await axios.get("/api/show/credentials/" + userId)
@@ -57,6 +68,18 @@ const showConnectionInformations = async (userId) => {
 }
 onMounted(() => {
   getCustomers();
+  window.Pusher.logToConsole = true;
+
+  const pusher = new Pusher(import.meta.env.VITE_PUSHER_APP_KEY, {
+    cluster: import.meta.env.VITE_PUSHER_APP_CLUSTER ?? 'mt1',
+    encrypted: true,
+  });
+
+  const channel = pusher.subscribe('response-channel');
+
+  channel.bind('response.received', (data) => {
+    statusMessage.value = data.message;
+  });
 });
 
 </script>
@@ -79,10 +102,12 @@ onMounted(() => {
                     <v-text-field label="Email" v-model="newCustomerForm.email"></v-text-field>
                   </v-col>
                   <v-col cols="12" sm="4" md="4">
-                    <v-text-field label="Password" v-model="newCustomerForm.password" type="text" required></v-text-field>
+                    <v-text-field label="Password" v-model="newCustomerForm.password" type="text"
+                      required></v-text-field>
                   </v-col>
                   <v-col cols="12" sm="12" md="12">
-                    <v-switch label="Is Admin ?" color="primary" v-model="newCustomerForm.is_admin" hide-details></v-switch>
+                    <v-switch label="Is Admin ?" color="primary" v-model="newCustomerForm.is_admin"
+                      hide-details></v-switch>
                   </v-col>
 
                 </v-row>
@@ -134,8 +159,18 @@ onMounted(() => {
               size="x-small"></v-btn>
             <v-btn class="ml-3" color="blue-lighten-2" @click="editUserCredentials(item.id)" icon="mdi-pencil-outline"
               size="x-small"></v-btn>
-              <v-btn class="ml-3" color="indigo-lighten-2" @click="synchronization(item.id)" icon="mdi-sync"
+            <v-btn class="ml-3" color="indigo-lighten-2" v-if="item.has_connection" @click="synchronization(item.id)"
+              icon="mdi-sync" size="x-small"></v-btn>
+            <v-btn class="ml-3" color="indigo-lighten-3" v-else @click="snackbar = true" icon="mdi-sync"
               size="x-small"></v-btn>
+            <v-snackbar v-model="snackbar">
+              No connection information is setup for this client. Please add and try again.
+              <template v-slot:actions>
+                <v-btn color="pink" variant="text" @click="snackbar = false">
+                  Close
+                </v-btn>
+              </template>
+            </v-snackbar>
 
           </td>
         </tr>
@@ -240,6 +275,16 @@ onMounted(() => {
             <v-btn color="primary" text="Save" variant="plain" type="submit" @click="credentialsDialog = false"></v-btn>
           </v-card-actions>
         </v-form>
+      </v-card>
+    </v-dialog>
+    <v-dialog width="auto" v-model="loading">
+      <v-card
+        max-width="400"
+        prepend-icon="mdi-update"
+        :text="statusMessage"
+        title="Running.."
+      >
+     
       </v-card>
     </v-dialog>
   </div>

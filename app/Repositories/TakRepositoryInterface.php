@@ -5,7 +5,7 @@ use Illuminate\Http\Request;
 
 interface TakRepositoryInterface
 {
-    public function connect() : String;
+    public function connect(int $userId) : String;
     
     public function getContacts() : array;
 

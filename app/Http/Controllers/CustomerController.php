@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Resources\CustomerResource;
 use App\Models\Credential;
 use App\Models\User;
 use Illuminate\Http\Request;
@@ -14,15 +15,13 @@ class CustomerController extends Controller
      */
     public function index()
     {
-        $customers = User::where('id', '<>' , auth()->user()->id)->get();
-        return response()->json([
-            'customers' => $customers,
-        ], 200);
+        $customers = User::where('id', '<>', auth()->user()->id)->get();
+        return CustomerResource::collection($customers);
     }
 
     /**
      * Show the form for creating a new resource.
-        */
+     */
     public function create()
     {
         //
@@ -59,7 +58,6 @@ class CustomerController extends Controller
      */
     public function edit(User $user)
     {
-        
     }
 
     /**
@@ -79,10 +77,15 @@ class CustomerController extends Controller
     /**
      * Remove the specified resource from storage.
      */
-    public function destroy(User $user)
+    public function destroy($customerId)
     {
-        $credentials = Credential::where('user_id', $user->id)->first();
+        $credentials = Credential::where('user_id', $customerId)->first();
+        $user = User::find($customerId);
+        if ($credentials) {
+            $credentials->delete();
+        }
         $user->delete();
-        $credentials->delete();
+        
+        return response()->json(200);
     }
 }

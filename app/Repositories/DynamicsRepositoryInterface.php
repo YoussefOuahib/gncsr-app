@@ -5,7 +5,7 @@ use Illuminate\Http\Request;
 
 interface DynamicsRepositoryInterface
 {
-    public function connect();
+    public function connect(int $userId);
     
     public function getContactByEmail(String $email);
 
