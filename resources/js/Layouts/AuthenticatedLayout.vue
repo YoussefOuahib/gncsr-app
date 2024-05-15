@@ -2,9 +2,8 @@
 import { onMounted, ref, computed } from "vue";
 import useAuth from "../Comopsables/auth";
 import InputError from '../Components/InputError.vue';
-
 import { useForm } from '@inertiajs/vue3';
-
+const { getUserInformations , userInformations} = useAuth();
 const drawer = ref(null);
 const resetDialog = ref(false);
 const { logout, isAdmin} = useAuth();
@@ -16,7 +15,10 @@ const form = useForm({
     password: '',
     password_confirmation: '',
 });
-
+onMounted(() => {
+    console.log('hello user');
+    getUserInformations();
+})
 const updatePassword = () => {
     axios.put(route('password.update'), {}, {
     params: {
@@ -47,7 +49,7 @@ const updatePassword = () => {
     <v-app id="inspire">
         <v-navigation-drawer v-model="drawer" app>
             <v-sheet class="pa-2 text-center">
-                <div>Hi, User</div>
+                <div>Hi, {{ userInformations.name}}</div>
             </v-sheet>
             <v-spacer></v-spacer>
             <v-divider></v-divider>

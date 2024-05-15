@@ -1,5 +1,5 @@
 <script setup>
-import { ref, onMounted, reactive } from "vue";
+import { ref, onMounted, reactive, computed } from "vue";
 import useCustomers from '@/Comopsables/customers';
 import axios from "axios";
 const dialog = ref(false);
@@ -7,8 +7,14 @@ const snackbar = ref(false);
 const loading = ref(false);
 const editUserCredentialsDialog = ref(false);
 const credentialsDialog = ref(false);
+const deleteCustomerDialog = ref(false);
 const selectedUser = ref();
 const statusMessage = ref('');
+const deletedCustomer = ref();
+const getCredentialsSnackbar = ref(false);
+const editCustomerInformationsSnackbar = ref(false);
+const deleteCustomerSnackbar = ref(false);
+const syncSnackbar = ref(false);
 const credentialsForm = ref({
   tak_url: '', tak_login: '', tak_password: '',
   sharepoint_url: '', sharepoint_client_id: '', sharepoint_client_secret: '', sharepoint_tenant_id: '',
@@ -18,8 +24,32 @@ const customerForm = ref({
   full_name: '', email: '', password: '',
 })
 const newCustomerForm = ref({
-  full_name: '', email: '', password: '', is_admin: false,
+  name: '', email: '', password: '', is_admin: false,
 })
+const showDeleteCustomerDialog = (item) => {
+  console.log('hello item');
+  deleteCustomerDialog.value = true;
+  deletedCustomer.value = item;
+}
+const isFormFilled = computed(() => {
+  const form = newCustomerForm.value;
+  return form.name !== '' && form.email !== '' && form.password !== '';
+});
+const isCredentialsFormFilled = computed(() => {
+  const form = credentialsForm.value;
+  return form.tak_url !== '' && form.tak_login !== '' && form.tak_password !== '' 
+  && form.sharepoint_url !== '' && form.sharepoint_client_id !== '' && form.sharepoint_client_secret !== '' && form.sharepoint_tenant_id !== ''
+  && form.dynamics_url !== '' && form.dynamics_client_id !== '' && form.dynamics_client_secret
+});
+
+const emptyCustomerForm = () => {
+  console.log('hello again');
+  dialog.value = false;
+  newCustomerForm.value.name = '';
+  newCustomerForm.value.email = '';
+  newCustomerForm.value.password = '';
+  newCustomerForm.value.is_admin = false;
+}
 const { getCustomers, addNewCustomer, updateCustomerCredentials, updateConnectionCredentials, customers, deleteCustomer } = useCustomers();
 const editUserCredentials = (userId) => {
   selectedUser.value = userId;
@@ -85,8 +115,8 @@ onMounted(() => {
 </script>
 <template>
   <div>
-    <v-btn class="ml-4 mt-3" color="primary" @click="emptyCustomerForm" prepend-icon="mdi-account-plus">
-      Add new customer
+    <v-btn class="ml-4 mt-3" color="primary" prepend-icon="mdi-account-plus">
+      Add new customer/User
 
       <v-dialog v-model="dialog" activator="parent" width="1024">
         <v-card>
@@ -114,10 +144,10 @@ onMounted(() => {
 
               </v-card-text>
               <v-card-actions class="justify-end">
-                <v-btn variant="plain" @click="dialog = false" class="p-3">
+                <v-btn variant="plain" @click="emptyCustomerForm" class="p-3">
                   Close
                 </v-btn>
-                <v-btn type="submit" class="p-3" @click="dialog = false" color="primary">
+                <v-btn type="submit" :disabled="!isFormFilled" class="p-3" @click="emptyCustomerForm" color="primary">
                   Save
                 </v-btn>
               </v-card-actions>
@@ -153,13 +183,16 @@ onMounted(() => {
           <td>{{ item.email }}</td>
           <td> {{ item.is_admin ? 'Yes' : 'No' }}</td>
           <td>
-            <v-btn class="ml-3" @click="getCredentials(item.id)" color="green-lighten-2" icon="mdi-wan"
+            <v-btn class="ml-3" @mouseenter="getCredentialsSnackbar = true" @mouseleave="getCredentialsSnackbar = false"
+              @click="getCredentials(item.id)" color="green-lighten-2" icon="mdi-wan" size="x-small"></v-btn>
+            <v-btn class="ml-3" color="red-darken-2" @mouseenter="deleteCustomerSnackbar = true"
+              @mouseleave="deleteCustomerSnackbar = false" icon="mdi-trash-can" @click="showDeleteCustomerDialog(item)"
               size="x-small"></v-btn>
-            <v-btn class="ml-3" color="red-darken-2" icon="mdi-trash-can" @click="deleteCustomer(item.id)"
-              size="x-small"></v-btn>
-            <v-btn class="ml-3" color="blue-lighten-2" @click="editUserCredentials(item.id)" icon="mdi-pencil-outline"
-              size="x-small"></v-btn>
-            <v-btn class="ml-3" color="indigo-lighten-2" v-if="item.has_connection" @click="synchronization(item.id)"
+            <v-btn class="ml-3" color="blue-lighten-2" @mouseenter="editCustomerInformationsSnackbar = true"
+              @mouseleave="editCustomerInformationsSnackbar = false" @click="editUserCredentials(item.id)"
+              icon="mdi-pencil-outline" size="x-small"></v-btn>
+            <v-btn class="ml-3" color="indigo-lighten-2" @mouseenter="syncSnackbar = true"
+              @mouseleave="syncSnackbar = false" v-if="item.has_connection" @click="synchronization(item.id)"
               icon="mdi-sync" size="x-small"></v-btn>
             <v-btn class="ml-3" color="indigo-lighten-3" v-else @click="snackbar = true" icon="mdi-sync"
               size="x-small"></v-btn>
@@ -176,6 +209,58 @@ onMounted(() => {
         </tr>
       </tbody>
     </v-table>
+    <v-snackbar v-model="getCredentialsSnackbar">
+      Update Connection Informations
+
+      <template v-slot:actions>
+        <v-btn color="pink" variant="text" @click="getCredentialsSnackbar = false">
+          Close
+        </v-btn>
+      </template>
+    </v-snackbar>
+    <v-snackbar v-model="deleteCustomerSnackbar">
+      Delete Customer
+
+      <template v-slot:actions>
+        <v-btn color="red" variant="text" @click="deleteCustomerSnackbar = false">
+          Close
+        </v-btn>
+      </template>
+    </v-snackbar>
+    <v-snackbar v-model="editCustomerInformationsSnackbar">
+      Edit Customer Credentials
+
+      <template v-slot:actions>
+        <v-btn color="red" variant="text" @click="editCustomerInformationsSnackbar = false">
+          Close
+        </v-btn>
+      </template>
+    </v-snackbar>
+    <v-snackbar v-model="syncSnackbar">
+      Synchronize Data
+      <template v-slot:actions>
+        <v-btn color="red" variant="text" @click="syncSnackbar = false">
+          Close
+        </v-btn>
+      </template>
+    </v-snackbar>
+    <v-dialog v-model="deleteCustomerDialog" width="1024">
+      <v-card>
+        <v-container>
+          <v-card-text>
+            <span class="text-subtitle-1 text-medium-emphasis mt-3">Are you sure you wanna delete this record ?</span>
+          </v-card-text>
+          <v-card-actions class="justify-end">
+            <v-btn variant="plain" @click="deleteCustomerDialog = false" class="p-3">
+              Close
+            </v-btn>
+            <v-btn type="submit" class="p-3" @click="deleteCustomer(deletedCustomer.id)" color="primary">
+              Delete
+            </v-btn>
+          </v-card-actions>
+        </v-container>
+      </v-card>
+    </v-dialog>
     <v-dialog v-model="editUserCredentialsDialog" width="1024">
       <v-card>
         <v-form @submit.prevent="updateCustomerCredentials(customerForm, selectedUser)" enctype="multipart/form-data">
@@ -212,6 +297,7 @@ onMounted(() => {
       </v-card>
 
     </v-dialog>
+
     <v-dialog v-model="credentialsDialog">
       <v-card prepend-icon="mdi-connection" title="Connect">
         <v-form @submit.prevent="updateConnectionCredentials(credentialsForm, selectedUser)"
@@ -272,19 +358,14 @@ onMounted(() => {
           <v-card-actions>
             <v-spacer></v-spacer>
             <v-btn text="Close" variant="plain" @click="credentialsDialog = false"></v-btn>
-            <v-btn color="primary" text="Save" variant="plain" type="submit" @click="credentialsDialog = false"></v-btn>
+            <v-btn color="primary" text="Save" :disabled="!isCredentialsFormFilled" variant="plain" type="submit" @click="credentialsDialog = false"></v-btn>
           </v-card-actions>
         </v-form>
       </v-card>
     </v-dialog>
     <v-dialog width="auto" v-model="loading">
-      <v-card
-        max-width="400"
-        prepend-icon="mdi-update"
-        :text="statusMessage"
-        title="Running.."
-      >
-     
+      <v-card max-width="400" prepend-icon="mdi-update" :text="statusMessage" title="Running..">
+
       </v-card>
     </v-dialog>
   </div>

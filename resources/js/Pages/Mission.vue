@@ -69,7 +69,7 @@ export default {
 </script>
 <template>
     <div>
-        <v-btn class="ml-4 mt-3" color="primary" prepend-icon="mdi-connection">
+        <!-- <v-btn class="ml-4 mt-3" color="primary" prepend-icon="mdi-connection">
             Connect
 
             <v-dialog v-model="dialog" activator="parent" width="1024">
@@ -144,7 +144,7 @@ export default {
                 </v-card>
 
             </v-dialog>
-        </v-btn>
+        </v-btn> -->
         <v-btn class="ml-4 mt-3" @click="executeProcess" :loading="loading" color="secondary" prepend-icon="mdi-play">
             Execute
         </v-btn>

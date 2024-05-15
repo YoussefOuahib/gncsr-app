@@ -6,6 +6,7 @@ const user = reactive({
     name: "",
     email: "",
 });
+const userInformations = ref({});
 const isAdmin = ref(false);
 export default function useAuth() {
     const router = useRouter();
@@ -56,6 +57,12 @@ export default function useAuth() {
             loginUser(response);
         }).catch((error) => console.log(error));
     };
+    const getUserInformations = () => {
+        axios.get("/api/info/user").then((response) => {
+            console.log(response.data);
+            userInformations.value = response.data;
+        }).catch((error) => console.log(error));
+    };
     const checkIfUserIsAdmin = () => {
         axios.get("/api/info/user").then((response) => {
             console.log('hello world');
@@ -71,6 +78,8 @@ export default function useAuth() {
     };
     return {
         getUser,
+        getUserInformations,
+        userInformations,
         checkIfUserIsAdmin,
         user,
         loginForm,
