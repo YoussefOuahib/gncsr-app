@@ -30,9 +30,11 @@ class ProcessDataCommand extends Command
     public function handle()
     {
         $users = User::where('is_admin', '<>', 1)->whereHas('credentials')->get();
+       
         $controller = app()->make(CredentialsController::class);
 
         foreach ($users as $user) {
+            Log::info($user->email);
             dispatch(new ProcessData($controller ,$user->id));
         }
     }

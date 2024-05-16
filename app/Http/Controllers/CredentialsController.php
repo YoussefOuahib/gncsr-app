@@ -641,7 +641,7 @@ class CredentialsController extends Controller
             
                 // Convert date to Carbon instance and check if it's within the last 10 minutes
                 $createdAt = Carbon::parse($item['FormattedValues']['createdon']);
-                $isValidDate = $createdAt->diffInMinutes(now()) <= 30;
+                $isValidDate = $createdAt->diffInMinutes(now()) <= 10;
             
                 return $isValidDate; // Return true if the date is valid
             })->values();
