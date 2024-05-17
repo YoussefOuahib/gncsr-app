@@ -2,7 +2,7 @@
 import { ref, onMounted, reactive, computed } from "vue";
 import useCustomers from '@/Comopsables/customers';
 import axios from "axios";
-const dialog = ref(false);
+const addNewCustomerDialog = ref(false);
 const snackbar = ref(false);
 const loading = ref(false);
 const editUserCredentialsDialog = ref(false);
@@ -27,7 +27,6 @@ const newCustomerForm = ref({
   name: '', email: '', password: '', is_admin: false,
 })
 const showDeleteCustomerDialog = (item) => {
-  console.log('hello item');
   deleteCustomerDialog.value = true;
   deletedCustomer.value = item;
 }
@@ -37,14 +36,13 @@ const isFormFilled = computed(() => {
 });
 const isCredentialsFormFilled = computed(() => {
   const form = credentialsForm.value;
-  return form.tak_url !== '' && form.tak_login !== '' && form.tak_password !== '' 
-  && form.sharepoint_url !== '' && form.sharepoint_client_id !== '' && form.sharepoint_client_secret !== '' && form.sharepoint_tenant_id !== ''
-  && form.dynamics_url !== '' && form.dynamics_client_id !== '' && form.dynamics_client_secret
+  return form.tak_url !== '' && form.tak_login !== '' && form.tak_password !== ''
+    && form.sharepoint_url !== '' && form.sharepoint_client_id !== '' && form.sharepoint_client_secret !== '' && form.sharepoint_tenant_id !== ''
+    && form.dynamics_url !== '' && form.dynamics_client_id !== '' && form.dynamics_client_secret
 });
 
 const emptyCustomerForm = () => {
-  console.log('hello again');
-  dialog.value = false;
+  addNewCustomerDialog.value = false;
   newCustomerForm.value.name = '';
   newCustomerForm.value.email = '';
   newCustomerForm.value.password = '';
@@ -96,6 +94,13 @@ const showConnectionInformations = async (userId) => {
       console.log(error);
     });
 }
+const showNewCustomerDialog = async() => {
+  newCustomerForm.value.name = '';
+  newCustomerForm.value.email = '';
+  newCustomerForm.value.password = '';
+  newCustomerForm.value.is_admin = false;
+  addNewCustomerDialog.value = true;
+}
 onMounted(() => {
   getCustomers();
   window.Pusher.logToConsole = true;
@@ -115,50 +120,46 @@ onMounted(() => {
 </script>
 <template>
   <div>
-    <v-btn class="ml-4 mt-3" color="primary" prepend-icon="mdi-account-plus">
-      Add new customer/User
-
-      <v-dialog v-model="dialog" activator="parent" width="1024">
-        <v-card>
-          <v-form @submit.prevent="addNewCustomer(newCustomerForm)" enctype="multipart/form-data">
-            <v-container>
-              <v-card-text>
-                <span class="text-subtitle-1 text-medium-emphasis mt-3">User Credentials</span>
-                <v-row>
-                  <v-col cols="12" sm="4" md="4">
-                    <v-text-field label="Full Name" v-model="newCustomerForm.name" required></v-text-field>
-                  </v-col>
-                  <v-col cols="12" sm="4" md="4">
-                    <v-text-field label="Email" v-model="newCustomerForm.email"></v-text-field>
-                  </v-col>
-                  <v-col cols="12" sm="4" md="4">
-                    <v-text-field label="Password" v-model="newCustomerForm.password" type="text"
-                      required></v-text-field>
-                  </v-col>
-                  <v-col cols="12" sm="12" md="12">
-                    <v-switch label="Is Admin ?" color="primary" v-model="newCustomerForm.is_admin"
-                      hide-details></v-switch>
-                  </v-col>
-
-                </v-row>
-
-              </v-card-text>
-              <v-card-actions class="justify-end">
-                <v-btn variant="plain" @click="emptyCustomerForm" class="p-3">
-                  Close
-                </v-btn>
-                <v-btn type="submit" :disabled="!isFormFilled" class="p-3" @click="emptyCustomerForm" color="primary">
-                  Save
-                </v-btn>
-              </v-card-actions>
-            </v-container>
-
-          </v-form>
-
-        </v-card>
-
-      </v-dialog>
+    <v-btn class="ml-4 mt-3" color="primary" @click="showNewCustomerDialog" prepend-icon="mdi-account-plus">
+      Add new customer/user
     </v-btn>
+    <v-dialog v-model="addNewCustomerDialog">
+      <v-card>
+        <v-form @submit.prevent="addNewCustomer(newCustomerForm)" enctype="multipart/form-data">
+          <v-container>
+            <v-card-text>
+              <span class="text-subtitle-1 text-medium-emphasis mt-3">User Credentials</span>
+              <v-row>
+                <v-col cols="12" sm="4" md="4">
+                  <v-text-field label="Full Name" v-model="newCustomerForm.name" required></v-text-field>
+                </v-col>
+                <v-col cols="12" sm="4" md="4">
+                  <v-text-field label="Email" v-model="newCustomerForm.email"></v-text-field>
+                </v-col>
+                <v-col cols="12" sm="4" md="4">
+                  <v-text-field label="Password" v-model="newCustomerForm.password" type="text" required></v-text-field>
+                </v-col>
+                <v-col cols="12" sm="12" md="12">
+                  <v-switch label="Is Admin ?" color="primary" v-model="newCustomerForm.is_admin"
+                    hide-details></v-switch>
+                </v-col>
+
+              </v-row>
+
+            </v-card-text>
+            <v-card-actions class="justify-end">
+              <v-btn variant="plain" @click="emptyCustomerForm" class="p-3">
+                Close
+              </v-btn>
+              <v-btn type="submit" :disabled="!isFormFilled" @click="addNewCustomerDialog = false" class="p-3" color="primary">
+                Save
+              </v-btn>
+            </v-card-actions>
+          </v-container>
+        </v-form>
+      </v-card>
+    </v-dialog>
+
     <v-table>
       <thead>
         <tr>
@@ -168,9 +169,7 @@ onMounted(() => {
           <th class="text-left">
             Email
           </th>
-          <th class="text-left">
-            Is admin ?
-          </th>
+
           <th class="text-left">
             Actions
           </th>
@@ -181,21 +180,23 @@ onMounted(() => {
 
           <td>{{ item.name }}</td>
           <td>{{ item.email }}</td>
-          <td> {{ item.is_admin ? 'Yes' : 'No' }}</td>
           <td>
             <v-btn class="ml-3" @mouseenter="getCredentialsSnackbar = true" @mouseleave="getCredentialsSnackbar = false"
-              @click="getCredentials(item.id)" color="green-lighten-2" icon="mdi-wan" size="x-small"></v-btn>
+              @click="getCredentials(item.id)" v-if="!item.is_admin" color="green-lighten-2" icon="mdi-wan"
+              size="x-small"></v-btn>
             <v-btn class="ml-3" color="red-darken-2" @mouseenter="deleteCustomerSnackbar = true"
               @mouseleave="deleteCustomerSnackbar = false" icon="mdi-trash-can" @click="showDeleteCustomerDialog(item)"
               size="x-small"></v-btn>
             <v-btn class="ml-3" color="blue-lighten-2" @mouseenter="editCustomerInformationsSnackbar = true"
               @mouseleave="editCustomerInformationsSnackbar = false" @click="editUserCredentials(item.id)"
               icon="mdi-pencil-outline" size="x-small"></v-btn>
-            <v-btn class="ml-3" color="indigo-lighten-2" @mouseenter="syncSnackbar = true"
-              @mouseleave="syncSnackbar = false" v-if="item.has_connection" @click="synchronization(item.id)"
-              icon="mdi-sync" size="x-small"></v-btn>
-            <v-btn class="ml-3" color="indigo-lighten-3" v-else @click="snackbar = true" icon="mdi-sync"
-              size="x-small"></v-btn>
+            <div v-if="!item.is_admin" style="display: inline;">
+              <v-btn class="ml-3" color="indigo-lighten-2" @mouseenter="syncSnackbar = true"
+                @mouseleave="syncSnackbar = false" v-if="item.has_connection" @click="synchronization(item.id)"
+                icon="mdi-sync" size="x-small"></v-btn>
+              <v-btn class="ml-3" color="indigo-lighten-3" v-else @click="snackbar = true" icon="mdi-sync"
+                size="x-small"></v-btn>
+            </div>
             <v-snackbar v-model="snackbar">
               No connection information is setup for this client. Please add and try again.
               <template v-slot:actions>
@@ -254,7 +255,7 @@ onMounted(() => {
             <v-btn variant="plain" @click="deleteCustomerDialog = false" class="p-3">
               Close
             </v-btn>
-            <v-btn type="submit" class="p-3" @click="deleteCustomer(deletedCustomer.id)" color="primary">
+            <v-btn class="p-3" @click="deleteCustomerDialog = false; deleteCustomer(deletedCustomer.id)" color="primary">
               Delete
             </v-btn>
           </v-card-actions>
@@ -358,7 +359,8 @@ onMounted(() => {
           <v-card-actions>
             <v-spacer></v-spacer>
             <v-btn text="Close" variant="plain" @click="credentialsDialog = false"></v-btn>
-            <v-btn color="primary" text="Save" :disabled="!isCredentialsFormFilled" variant="plain" type="submit" @click="credentialsDialog = false"></v-btn>
+            <v-btn color="primary" text="Save" :disabled="!isCredentialsFormFilled" variant="plain" type="submit"
+              @click="credentialsDialog = false"></v-btn>
           </v-card-actions>
         </v-form>
       </v-card>
