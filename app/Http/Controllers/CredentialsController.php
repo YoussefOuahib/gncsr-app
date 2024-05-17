@@ -176,7 +176,7 @@ class CredentialsController extends Controller
                 if ($kml) {
                     $this->uploadFileToSharePoint($kml, $folderName, 'kml', $case);
                 }
-                //$this->updateIncident($this->service, $case['Attributes']['incidentid']);
+                $this->updateIncident($this->service, $case['Attributes']['incidentid']);
 
             }
         }
